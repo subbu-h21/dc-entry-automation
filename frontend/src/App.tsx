@@ -236,13 +236,9 @@ export default function App() {
             />
           </SectionCard>
 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, whiteSpace: 'nowrap' }}>
-              <span style={{ ...labelText }}>Extraction Model</span>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                3.1 Flash Lite — small DC &nbsp;·&nbsp; 2.5 Pro — large DC
-              </span>
-            </div>
+            <span style={{ ...labelText, whiteSpace: 'nowrap' }}>Extraction Model</span>
             <select
               style={{ ...inputStyle, flex: 1 }}
               value={extractionModel}
@@ -272,6 +268,10 @@ export default function App() {
               />
               <span style={{ ...labelText }}>Reasoning</span>
             </label>
+          </div>
+          <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+            Use <strong>3.1 Flash Lite</strong> for smaller DCs &nbsp;·&nbsp; <strong>2.5 Pro</strong> for larger DCs with reasoning turned on
+          </span>
           </div>
 
           <button
