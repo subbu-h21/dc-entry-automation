@@ -28,9 +28,10 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Product catalog (may contain sensitive data)
+# Excel files — except the product catalog
 *.xlsx
 *.xls
+!Product_List.xlsx
 
 # Separate project — not part of this repo
 voice billing files/
