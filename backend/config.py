@@ -17,7 +17,8 @@ ALLOWED_ORIGINS: list[str] = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 ]
 
-PRODUCT_LIST_PATH: str = os.getenv("PRODUCT_LIST_PATH", "")
+_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PRODUCT_LIST_PATH: str = os.getenv("PRODUCT_LIST_PATH", os.path.join(_root, "Product_List.xlsx"))
 PRODUCT_LIST_SHEET: str = os.getenv("PRODUCT_LIST_SHEET", "data")
 
 KNOWN_SUPPLIERS: list[str] = [

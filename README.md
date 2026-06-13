@@ -48,14 +48,10 @@ Open `backend\.env` and add your values:
 ```env
 OPENROUTER_API_KEY=sk-or-v1-...
 ELEVENLABS_API_KEY=...
-PRODUCT_LIST_PATH=C:\path\to\your\Product_List.xlsx
-PRODUCT_LIST_SHEET=data
 PORT=3001
 ```
 
 > Get an OpenRouter key at https://openrouter.ai/keys
-
-> **Note:** You also need to copy over your `Product_List.xlsx` catalog file and point `PRODUCT_LIST_PATH` at it.
 
 ### Step 5 — Launch the app
 
