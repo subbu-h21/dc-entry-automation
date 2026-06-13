@@ -1,44 +1,51 @@
-# Pharmacy Bill Extractor
+# DC Entry Automation
 
-Extract product name, quantity, and batch number from pharmacy purchase invoices using Gemini 2.5 Flash via OpenRouter.
+Pharmacy invoice processing tool. Upload a photo of a delivery note → AI extracts product rows → fuzzy-matches against your CRM catalog → fill in the DC Entry web form automatically.
 
 ## Stack
 
-- **Frontend**: React + Vite + TypeScript
-- **Backend**: Python + FastAPI + Uvicorn
-- **LLM**: Gemini 2.5 Flash via OpenRouter (OpenAI Python SDK)
+| Layer | Tech |
+|---|---|
+| Frontend | React + Vite + TypeScript |
+| Backend | Python + FastAPI + Uvicorn |
+| AI | Gemini via OpenRouter |
+| Browser automation | Playwright |
 
 ---
 
-## Setting Up on a New Computer
+## Setup (New Machine)
 
-### Prerequisites — install these first
-- [Python 3.11+](https://python.org/downloads)
-- [Node.js 18+](https://nodejs.org)
-- [Git](https://git-scm.com)
+### Step 1 — Install prerequisites
 
-### 1. Clone the repo
+| Tool | Download |
+|---|---|
+| Python 3.11+ | https://python.org/downloads |
+| Node.js 18+ | https://nodejs.org |
+| Git | https://git-scm.com |
+
+### Step 2 — Clone the repo
+
 ```bash
 git clone https://github.com/subbu-h21/dc-entry-automation.git
 cd dc-entry-automation
 ```
 
-### 2. Set up the backend
-```bash
-cd backend
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-playwright install chromium
-```
+### Step 3 — Run setup.bat
 
-Create the `.env` file:
-```bash
-copy .env.example .env
-```
+Double-click **`setup.bat`** in the project folder.
 
-Open `.env` and fill in your real values:
-```
+This will automatically:
+- Create the Python virtual environment
+- Install all backend Python dependencies
+- Download the Playwright browser (Chromium)
+- Install all frontend Node dependencies
+- Create `backend\.env` from the template
+
+### Step 4 — Fill in your API keys
+
+Open `backend\.env` and add your values:
+
+```env
 OPENROUTER_API_KEY=sk-or-v1-...
 ELEVENLABS_API_KEY=...
 PRODUCT_LIST_PATH=C:\path\to\your\Product_List.xlsx
@@ -46,148 +53,57 @@ PRODUCT_LIST_SHEET=data
 PORT=3001
 ```
 
-### 3. Set up the frontend
-```bash
-cd ..\frontend
-npm install
-```
+> Get an OpenRouter key at https://openrouter.ai/keys
 
-### 4. Run (two terminals)
+> **Note:** You also need to copy over your `Product_List.xlsx` catalog file and point `PRODUCT_LIST_PATH` at it.
 
-**Terminal 1 — Backend:**
-```bash
-cd backend
-venv\Scripts\activate
-python main.py
-```
+### Step 5 — Launch the app
 
-**Terminal 2 — Frontend:**
-```bash
-cd frontend
-npm run dev
-```
+Double-click **`start.bat`**.
 
-Open **http://localhost:5173** in the browser.
-
-> **Note:** Two things to bring manually to the new machine:
-> - Your API keys (fill them into `.env`)
-> - The `Product_List.xlsx` catalog file — copy it over and update `PRODUCT_LIST_PATH` in `.env`
-
----
-
-## Local Development Setup
-
-### 1. Clone / open the project
-
-```
-d:\code_files\dc image recognition\
-├── backend\
-└── frontend\
-```
-
-### 2. Configure the backend API key
-
-```bash
-cd backend
-copy .env.example .env
-```
-
-Edit `.env` and add your key:
-```
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxx
-PORT=3001
-```
-
-Get a key at https://openrouter.ai/keys
-
-### 3. Install dependencies
-
-```bash
-# Backend (Python)
-cd backend
-python -m venv venv
-venv\Scripts\activate        # Windows
-pip install -r requirements.txt
-
-# Frontend
-cd ../frontend
-npm install
-```
-
-### 4. Run (two terminals)
-
-**Terminal 1 — Backend:**
-```bash
-cd backend
-venv\Scripts\activate
-python main.py
-```
-Backend starts on http://localhost:3001
-
-**Terminal 2 — Frontend:**
-```bash
-cd frontend
-npm run dev
-```
-Frontend starts on http://localhost:5173
+This opens the backend and frontend in separate terminal windows and automatically opens **http://localhost:5173** in your browser.
 
 ---
 
 ## Usage
 
-1. Open http://localhost:5173 in your browser
-2. Upload a pharmacy invoice image (JPEG, PNG, WebP, GIF — max 10 MB)
+1. Upload a pharmacy invoice image (JPEG, PNG, WebP — max 10 MB)
+2. Select the extraction model:
+   - **3.1 Flash Lite** — faster, good for smaller DCs
+   - **2.5 Pro** — more accurate, use with Reasoning on for larger DCs
 3. Click **Extract Products**
-4. View the extracted table with Product Name, Quantity, and Batch Number
-5. Use **Copy CSV** to copy the data to clipboard
-
----
-
-## API
-
-### `POST /extract`
-
-**Request:** `multipart/form-data` with field `image`
-
-**Response:**
-```json
-{
-  "products": [
-    {
-      "product_name": "BETADINE 10% SOLUTION",
-      "quantity": 3,
-      "batch_number": "MD051263"
-    }
-  ]
-}
-```
-
-**Errors:**
-```json
-{ "error": "Human-readable error message" }
-```
+4. Review and edit the extracted table
+5. Click **Launch Browser** to auto-fill the DC Entry form
 
 ---
 
 ## Project Structure
 
 ```
-backend/
-  main.py               # FastAPI app, CORS, dotenv, uvicorn entry
-  routes/
-    extract.py          # POST /extract route, file validation, error mapping
-  services/
-    openrouter.py       # OpenAI Python SDK → OpenRouter → Gemini, tool calling
-  requirements.txt
-  .env.example
-
-frontend/
-  src/
-    App.tsx             # Main page layout and state
-    components/
-      ImageUpload.tsx   # Drag-and-drop file picker + preview
-      ResultsTable.tsx  # Extracted products table + CSV copy
-    main.tsx
-    index.css
-  vite.config.ts        # Dev proxy: /extract → localhost:3001
+dc-entry-automation/
+├── backend/
+│   ├── main.py                  # FastAPI app entry point
+│   ├── config.py                # Env var loading
+│   ├── requirements.txt
+│   ├── .env.example             # Copy this to .env and fill in keys
+│   ├── routes/
+│   │   ├── extract.py           # POST /extract — image → product rows
+│   │   ├── browser.py           # POST /launch-browser — Playwright DC fill
+│   │   ├── voice.py             # POST /voice/command — voice corrections
+│   │   └── products.py          # GET /products — catalog lookup
+│   └── services/
+│       ├── openrouter.py        # Gemini extraction via OpenRouter
+│       ├── product_matcher.py   # Two-stage fuzzy SKU matching
+│       ├── client.py            # OpenAI SDK clients → OpenRouter
+│       └── matcher_instance.py  # Singleton matcher loaded from Excel
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx              # Top-level state and layout
+│   │   └── components/
+│   │       ├── ResultsTable.tsx # Editable table + voice UI
+│   │       ├── ImageUpload.tsx  # Drag-and-drop upload
+│   │       └── icons.tsx        # SVG icons
+│   └── vite.config.ts           # Proxy: /extract, /launch-browser, /voice → :3001
+├── setup.bat                    # First-time setup script
+└── start.bat                    # Launch both servers + open browser
 ```
