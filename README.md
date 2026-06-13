@@ -10,7 +10,72 @@ Extract product name, quantity, and batch number from pharmacy purchase invoices
 
 ---
 
-## Setup
+## Setting Up on a New Computer
+
+### Prerequisites — install these first
+- [Python 3.11+](https://python.org/downloads)
+- [Node.js 18+](https://nodejs.org)
+- [Git](https://git-scm.com)
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/subbu-h21/dc-entry-automation.git
+cd dc-entry-automation
+```
+
+### 2. Set up the backend
+```bash
+cd backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+playwright install chromium
+```
+
+Create the `.env` file:
+```bash
+copy .env.example .env
+```
+
+Open `.env` and fill in your real values:
+```
+OPENROUTER_API_KEY=sk-or-v1-...
+ELEVENLABS_API_KEY=...
+PRODUCT_LIST_PATH=C:\path\to\your\Product_List.xlsx
+PRODUCT_LIST_SHEET=data
+PORT=3001
+```
+
+### 3. Set up the frontend
+```bash
+cd ..\frontend
+npm install
+```
+
+### 4. Run (two terminals)
+
+**Terminal 1 — Backend:**
+```bash
+cd backend
+venv\Scripts\activate
+python main.py
+```
+
+**Terminal 2 — Frontend:**
+```bash
+cd frontend
+npm run dev
+```
+
+Open **http://localhost:5173** in the browser.
+
+> **Note:** Two things to bring manually to the new machine:
+> - Your API keys (fill them into `.env`)
+> - The `Product_List.xlsx` catalog file — copy it over and update `PRODUCT_LIST_PATH` in `.env`
+
+---
+
+## Local Development Setup
 
 ### 1. Clone / open the project
 
