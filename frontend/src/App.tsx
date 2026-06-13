@@ -237,7 +237,7 @@ export default function App() {
           </SectionCard>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="model-selector-row" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ ...labelText, whiteSpace: 'nowrap' }}>Extraction Model</span>
             <select
               style={{ ...inputStyle, flex: 1 }}

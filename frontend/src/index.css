@@ -44,7 +44,6 @@ body {
 
 @media (max-width: 768px) {
   main {
-    grid-template-columns: 1fr !important;
     padding: 16px 12px !important;
   }
 }
@@ -68,5 +67,14 @@ body {
 
   .upload-grid {
     grid-template-columns: 1fr !important;
+  }
+
+  .model-selector-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  .model-selector-row label {
+    justify-content: flex-start !important;
   }
 }
