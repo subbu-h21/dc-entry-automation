@@ -1,10 +1,16 @@
 from fastapi import APIRouter, Query
 from rapidfuzz import process, fuzz
 
+from config import ALL_SUPPLIERS
 from services.matcher_instance import get_matcher
 from services.product_matcher import _normalize, _JUNK_PREFIX_DISPLAY
 
 router = APIRouter()
+
+
+@router.get("/suppliers")
+def get_suppliers():
+    return {"suppliers": ALL_SUPPLIERS}
 
 
 @router.get("/products/search")

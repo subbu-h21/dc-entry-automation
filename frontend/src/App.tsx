@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import ImageUpload from './components/ImageUpload';
 import ResultsTable, { Product, ResolvedProduct } from './components/ResultsTable';
 import {
@@ -28,14 +28,33 @@ const EXTRACTION_MODELS = [
   { value: 'nex-agi/nex-n2-pro:free',     label: 'Nex N2 Pro (free)',     supportsReasoning: true },
 ];
 
-const KNOWN_SUPPLIERS = [
-  'KAPILA PHARMA',
-  'KAPILA MEDICAL AGENCIES',
-  'SAROJ PHARMA',
-  'HEGDE BROTHERS',
-  'DONNA ASSOCIATES',
-  'A.K.PHARMA',
-  'DHANYA PHARMA',
+
+const STAFF_NAMES = [
+  'Abhishek Seetaram Naik',
+  'Akshata',
+  'Archana Gopal Marathi',
+  'Chaitra G Naik',
+  'Dattatraya V Hegde',
+  'Deepa Manjunatha Gouda',
+  'Fazil Unshalli',
+  'Ganesh Hegde',
+  'Harsha N',
+  'Harshita Suresh Naik',
+  'Keerthana M',
+  'Krishnamoorthy',
+  'Laxmi R Palankar',
+  'Manjunata D Gosavi',
+  'Mohan Gowda',
+  'Narendra',
+  'Netravati Prakash Kothari',
+  'Nivedita M K',
+  'Parashuram T Naik',
+  'Pooja Naik',
+  'Raghavendra',
+  'Raghavendra S Palankar',
+  'Renuka D H',
+  'Sharath Nagendra Naik',
+  'Subramanya Ganesh Hegde',
 ];
 
 const labelStyle: React.CSSProperties = {
@@ -74,9 +93,18 @@ export default function App() {
   const [dcNumber, setDcNumber]     = useState('');
   const [dcDate, setDcDate]         = useState('');
   const [supplier, setSupplier]     = useState('');
-  const [checkedBy, setCheckedBy]   = useState('GANESH HEGDE');
+  const [checkedBy, setCheckedBy]   = useState('Ganesh Hegde');
   const [extractionModel, setExtractionModel] = useState('google/gemini-3.1-flash-lite');
   const [reasoning, setReasoning] = useState(false);
+  const [branch, setBranch] = useState('HOSPET ROAD');
+  const [suppliers, setSuppliers] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch('/suppliers')
+      .then(r => r.json())
+      .then(d => setSuppliers(d.suppliers ?? []))
+      .catch(() => {});
+  }, []);
 
   const selectedModelMeta = EXTRACTION_MODELS.find(m => m.value === extractionModel);
   const reasoningSupported = selectedModelMeta?.supportsReasoning ?? false;
@@ -137,6 +165,7 @@ export default function App() {
           dc_date: dcDate,
           supplier,
           checked_by: checkedBy,
+          branch,
           products: resolvedProducts,
         }),
       });
@@ -364,20 +393,34 @@ export default function App() {
                   onChange={e => setSupplier(e.target.value)}
                 >
                   <option value="">— Select supplier —</option>
-                  {KNOWN_SUPPLIERS.map(s => (
+                  {suppliers.map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>
               </label>
               <label style={labelStyle}>
                 <span style={labelText}>Checked By</span>
-                <input
+                <select
                   style={inputStyle}
-                  type="text"
-                  placeholder="e.g. GANESH"
                   value={checkedBy}
-                  onChange={e => setCheckedBy(e.target.value.toUpperCase())}
-                />
+                  onChange={e => setCheckedBy(e.target.value)}
+                >
+                  <option value="">— Select staff —</option>
+                  {STAFF_NAMES.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={labelStyle}>
+                <span style={labelText}>Branch</span>
+                <select
+                  style={inputStyle}
+                  value={branch}
+                  onChange={e => setBranch(e.target.value)}
+                >
+                  <option value="HOSPET ROAD">HOSPET ROAD</option>
+                  <option value="SHIVAJI CHOWK">SHIVAJI CHOWK</option>
+                </select>
               </label>
             </div>
           </SectionCard>
@@ -399,6 +442,12 @@ export default function App() {
                 products={products}
                 onOpenDCEntry={handleLaunchBrowser}
                 launchStatus={launchStatus}
+                onDCUpdate={(field, value) => {
+                  if (field === 'dc_number')  setDcNumber(value);
+                  if (field === 'dc_date')    setDcDate(value);
+                  if (field === 'supplier')   setSupplier(value);
+                  if (field === 'checked_by') setCheckedBy(value);
+                }}
               />
             )}
           </SectionCard>

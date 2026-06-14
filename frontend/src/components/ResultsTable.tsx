@@ -52,10 +52,20 @@ interface VoiceUpdate {
   value: string | number;
 }
 
+interface VoiceDCUpdate {
+  field: string;
+  value: string;
+}
+
 const FIELD_LABELS: Record<string, string> = {
   quantity: 'Qty', mrp: 'MRP', old_mrp: 'Old MRP', rate: 'Rate',
   disc_percent: 'Disc%', free: 'Free', batch_number: 'Batch',
   expiry: 'Expiry', product_name: 'Product Name',
+};
+
+const DC_FIELD_LABELS: Record<string, string> = {
+  dc_number: 'DC Number', dc_date: 'Date',
+  supplier: 'Supplier', checked_by: 'Checked By',
 };
 
 const PULSE = `@keyframes vcPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.5)} }`;
@@ -64,9 +74,10 @@ interface Props {
   products: Product[];
   onOpenDCEntry: (resolved: ResolvedProduct[]) => void;
   launchStatus: 'idle' | 'loading' | 'open';
+  onDCUpdate: (field: string, value: string) => void;
 }
 
-export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: Props) {
+export default function ResultsTable({ products, onOpenDCEntry, launchStatus, onDCUpdate }: Props) {
   const [copied, setCopied]           = useState(false);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [pending, setPending]         = useState<Record<number, Override | null>>({});
@@ -80,6 +91,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
   const [voiceProcessing, setVoiceProcessing] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [voiceUpdates, setVoiceUpdates]       = useState<VoiceUpdate[]>([]);
+  const [voiceDCUpdates, setVoiceDCUpdates]   = useState<VoiceDCUpdate[]>([]);
   const [voiceError, setVoiceError]           = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<Blob[]>([]);
@@ -159,6 +171,10 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
 
   const hasMatching = products.some(p => p.top_candidates !== undefined);
 
+  const totalValue = products.reduce((sum, _, idx) =>
+    sum + resolvedField(idx, 'rate') * resolvedField(idx, 'quantity'), 0
+  );
+
   const copyAsCSV = () => {
     const header = 'Product Name,Quantity,Batch Number,Matched Product,Pack';
     const rows = products.map((_, i) => {
@@ -207,8 +223,9 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
           const data = await res.json();
           setVoiceTranscript(data.transcription ?? '');
           setVoiceUpdates(data.updates ?? []);
-          if (!(data.updates ?? []).length && data.transcription)
-            setVoiceError("Couldn't parse a command. Try: \"Row 1 change qty to 5\"");
+          setVoiceDCUpdates(data.dc_updates ?? []);
+          if (!(data.updates ?? []).length && !(data.dc_updates ?? []).length && data.transcription)
+            setVoiceError("Couldn't parse a command. Try: \"Row 1 change qty to 5\" or \"DC number is DC-123\"");
         } catch { setVoiceError('Network error — is the backend running?'); }
         finally { setVoiceProcessing(false); }
       };
@@ -233,10 +250,13 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
       }
       return next;
     });
+    for (const u of voiceDCUpdates) {
+      onDCUpdate(u.field, u.value);
+    }
     dismissVoice();
   };
 
-  const dismissVoice = () => { setVoiceTranscript(''); setVoiceUpdates([]); setVoiceError(''); };
+  const dismissVoice = () => { setVoiceTranscript(''); setVoiceUpdates([]); setVoiceDCUpdates([]); setVoiceError(''); };
 
   if (products.length === 0) {
     return (
@@ -333,7 +353,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
       </div>
 
       {/* Voice result panel */}
-      {(voiceTranscript || voiceUpdates.length > 0 || voiceError) && (
+      {(voiceTranscript || voiceUpdates.length > 0 || voiceDCUpdates.length > 0 || voiceError) && (
         <div style={{
           background: 'var(--surface)', borderRadius: 'var(--radius)',
           border: '1px solid var(--border)', padding: '12px 16px',
@@ -342,17 +362,27 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
           {voiceTranscript && (
             <p style={{ color: 'var(--text-secondary)', fontStyle: 'italic', margin: 0 }}>"{voiceTranscript}"</p>
           )}
-          {voiceUpdates.length > 0 && (
+          {(voiceUpdates.length > 0 || voiceDCUpdates.length > 0) && (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {voiceUpdates.map((u, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12px' }}>
+                  <div key={`pu-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12px' }}>
                     <span style={{ background: 'var(--accent-light)', color: 'var(--accent)', borderRadius: 4, padding: '1px 7px', fontWeight: 600 }}>
                       Row {u.row + 1}
                     </span>
                     <span style={{ color: 'var(--text-secondary)' }}>{FIELD_LABELS[u.field] ?? u.field}</span>
                     <span style={{ color: 'var(--text-muted)' }}>→</span>
                     <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{String(u.value)}</span>
+                  </div>
+                ))}
+                {voiceDCUpdates.map((u, i) => (
+                  <div key={`dc-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '12px' }}>
+                    <span style={{ background: '#f0fdf4', color: 'var(--success)', borderRadius: 4, padding: '1px 7px', fontWeight: 600 }}>
+                      DC
+                    </span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{DC_FIELD_LABELS[u.field] ?? u.field}</span>
+                    <span style={{ color: 'var(--text-muted)' }}>→</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{u.value}</span>
                   </div>
                 ))}
               </div>
@@ -393,6 +423,13 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
               <tr style={{ background: 'var(--surface-2)' }}>
                 <th style={th}>#</th>
                 <th style={{ ...th, textAlign: 'left', minWidth: 200 }}>Product Name (Invoice)</th>
+                {hasMatching && (
+                  <>
+                    <th style={{ ...th, textAlign: 'left', minWidth: 240 }}>Matched CRM Product</th>
+                    <th style={{ ...th, minWidth: 80 }}>Pack</th>
+                    <th style={{ ...th, minWidth: 85 }}>Confidence</th>
+                  </>
+                )}
                 <th style={{ ...th, minWidth: 60 }}>Free</th>
                 <th style={{ ...th, minWidth: 70 }}>Qty</th>
                 <th style={{ ...th, minWidth: 110 }}>Batch</th>
@@ -401,13 +438,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
                 <th style={{ ...th, minWidth: 75 }}>MRP</th>
                 <th style={{ ...th, minWidth: 75 }}>Rate</th>
                 <th style={{ ...th, minWidth: 70 }}>Disc%</th>
-                {hasMatching && (
-                  <>
-                    <th style={{ ...th, textAlign: 'left', minWidth: 240 }}>Matched CRM Product</th>
-                    <th style={{ ...th, minWidth: 80 }}>Pack</th>
-                    <th style={{ ...th, minWidth: 85 }}>Confidence</th>
-                  </>
-                )}
+                {hasMatching && <th style={{ ...th, minWidth: 80 }}>Value</th>}
               </tr>
             </thead>
             <tbody>
@@ -436,6 +467,55 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
                           'left',
                         )}
                       </td>
+
+                      {hasMatching && (
+                        <>
+                          <td style={td}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {resolved?.product ? (
+                                <span style={{ fontWeight: 500, color: modified ? 'var(--accent)' : 'var(--text-primary)' }}>
+                                  {resolved.product}
+                                  {modified && <span style={{ fontSize: '10px', marginLeft: 4, color: 'var(--accent)' }}>edited</span>}
+                                </span>
+                              ) : p.not_stocked ? (
+                                <span style={pill('var(--warning)', 'var(--warning-light)')}>Not stocked</span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No match</span>
+                              )}
+                              {hasMatching && (
+                                <button
+                                  onClick={() => isOpen ? setExpandedRow(null) : openPicker(idx)}
+                                  style={{
+                                    marginLeft: 'auto', flexShrink: 0,
+                                    background: isOpen ? 'var(--accent)' : 'var(--surface)',
+                                    border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
+                                    borderRadius: 6, padding: '3px 9px', fontSize: '11px',
+                                    fontWeight: 600, cursor: 'pointer',
+                                    color: isOpen ? '#fff' : 'var(--text-secondary)',
+                                    transition: 'all 0.15s',
+                                  }}
+                                >
+                                  {isOpen ? 'Close' : 'Change'}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+
+                          <td style={{ ...td, textAlign: 'center' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                              {resolved?.pack ?? '—'}
+                            </span>
+                          </td>
+
+                          <td style={{ ...td, textAlign: 'center' }}>
+                            {p.match_confidence != null && p.match_confidence >= 0 ? (
+                              <ConfBadge value={p.match_confidence} />
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>—</span>
+                            )}
+                          </td>
+                        </>
+                      )}
 
                       {/* Free */}
                       <td style={{ ...td, textAlign: 'center' }}>
@@ -513,59 +593,18 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
                       </td>
 
                       {hasMatching && (
-                        <>
-                          <td style={td}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              {resolved?.product ? (
-                                <span style={{ fontWeight: 500, color: modified ? 'var(--accent)' : 'var(--text-primary)' }}>
-                                  {resolved.product}
-                                  {modified && <span style={{ fontSize: '10px', marginLeft: 4, color: 'var(--accent)' }}>edited</span>}
-                                </span>
-                              ) : p.not_stocked ? (
-                                <span style={pill('var(--warning)', 'var(--warning-light)')}>Not stocked</span>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No match</span>
-                              )}
-                              {hasMatching && (
-                                <button
-                                  onClick={() => isOpen ? setExpandedRow(null) : openPicker(idx)}
-                                  style={{
-                                    marginLeft: 'auto', flexShrink: 0,
-                                    background: isOpen ? 'var(--accent)' : 'var(--surface)',
-                                    border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
-                                    borderRadius: 6, padding: '3px 9px', fontSize: '11px',
-                                    fontWeight: 600, cursor: 'pointer',
-                                    color: isOpen ? '#fff' : 'var(--text-secondary)',
-                                    transition: 'all 0.15s',
-                                  }}
-                                >
-                                  {isOpen ? 'Close' : 'Change'}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-
-                          <td style={{ ...td, textAlign: 'center' }}>
-                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              {resolved?.pack ?? '—'}
-                            </span>
-                          </td>
-
-                          <td style={{ ...td, textAlign: 'center' }}>
-                            {p.match_confidence != null && p.match_confidence >= 0 ? (
-                              <ConfBadge value={p.match_confidence} />
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>—</span>
-                            )}
-                          </td>
-                        </>
+                        <td style={{ ...td, textAlign: 'right' }}>
+                          <span style={{ fontSize: '12px' }}>
+                            {(resolvedField(idx, 'rate') * resolvedField(idx, 'quantity')).toFixed(2)}
+                          </span>
+                        </td>
                       )}
                     </tr>
 
                     {/* ── Inline candidate picker ── */}
                     {isOpen && (
                       <tr key={`picker-${idx}`}>
-                        <td colSpan={hasMatching ? 13 : 10} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
+                        <td colSpan={hasMatching ? 14 : 10} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
                           <CandidatePicker
                             product={p}
                             current={pending[idx] ?? null}
@@ -580,6 +619,18 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus }: 
                 );
               })}
             </tbody>
+            {hasMatching && (
+              <tfoot>
+                <tr style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border)' }}>
+                  <td colSpan={13} style={{ ...td, textAlign: 'right', fontWeight: 600, fontSize: '12px', color: 'var(--text-secondary)', borderBottom: 'none' }}>
+                    Total Value
+                  </td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)', borderBottom: 'none' }}>
+                    {totalValue.toFixed(2)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>

@@ -15,6 +15,22 @@ router = APIRouter()
 
 _FREE_QTY_RE = re.compile(r'\s+(\d+)\s*\+\s*(\d+)\s*$')
 
+_NAMED_MONTH_RE = re.compile(r'^([A-Za-z]+)([-/])(\d{2,4})$')
+_MONTH_MAP = {
+    'jan': '01', 'january': '01',
+    'feb': '02', 'february': '02',
+    'mar': '03', 'march': '03',
+    'apr': '04', 'april': '04',
+    'may': '05',
+    'jun': '06', 'june': '06',
+    'jul': '07', 'july': '07',
+    'aug': '08', 'august': '08',
+    'sep': '09', 'sept': '09', 'september': '09',
+    'oct': '10', 'october': '10',
+    'nov': '11', 'november': '11',
+    'dec': '12', 'december': '12',
+}
+
 
 def _fix_free_qty(products: list[dict]) -> None:
     """
@@ -31,6 +47,25 @@ def _fix_free_qty(products: list[dict]) -> None:
             p["product_name"] = name[:m.start()].strip()
             p["quantity"] = x
             p["free"] = y
+
+
+def _normalize_expiry(expiry: str) -> str:
+    if not expiry:
+        return expiry
+    m = _NAMED_MONTH_RE.match(expiry.strip())
+    if not m:
+        return expiry
+    month_num = _MONTH_MAP.get(m.group(1).lower())
+    if not month_num:
+        return expiry
+    sep = m.group(2)
+    year = m.group(3)[-2:]  # handles both YY and YYYY
+    return f"{month_num}{sep}{year}"
+
+
+def _fix_expiry(products: list[dict]) -> None:
+    for p in products:
+        p['expiry'] = _normalize_expiry(p.get('expiry', ''))
 
 
 def _match_supplier(extracted: str) -> str:
@@ -68,6 +103,9 @@ async def extract(image: UploadFile = File(...), model: str | None = Form(None),
 
         # Step 1b — Apply X+Y free-qty rule (fallback if Gemini missed it)
         _fix_free_qty(products)
+
+        # Step 1c — Normalize named-month expiry (e.g. "dec/27" → "12/27")
+        _fix_expiry(products)
 
         # Step 2 — Match each extracted name to CRM catalog
         matcher = get_matcher()

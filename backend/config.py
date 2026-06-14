@@ -1,4 +1,7 @@
+import csv
+import html as _html
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,12 +24,46 @@ _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRODUCT_LIST_PATH: str = os.getenv("PRODUCT_LIST_PATH", os.path.join(_root, "Product_List.xlsx"))
 PRODUCT_LIST_SHEET: str = os.getenv("PRODUCT_LIST_SHEET", "data")
 
-KNOWN_SUPPLIERS: list[str] = [
-    "KAPILA PHARMA",
-    "KAPILA MEDICAL AGENCIES",
-    "SAROJ PHARMA",
-    "HEGDE BROTHERS",
-    "DONNA ASSOCIATES",
-    "A.K.PHARMA",
-    "DHANYA PHARMA",
+_suppliers_csv = os.path.join(_root, "supplier_names.csv")
+
+def _load_suppliers() -> list[str]:
+    if not os.path.exists(_suppliers_csv):
+        return []
+    names = []
+    with open(_suppliers_csv, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            name = _html.unescape(row.get("Supplier Name", "")).strip()
+            if name:
+                names.append(name)
+    return sorted(names, key=str.upper)
+
+ALL_SUPPLIERS: list[str] = _load_suppliers()
+KNOWN_SUPPLIERS: list[str] = ALL_SUPPLIERS  # backward compat — extract.py uses this
+
+STAFF_NAMES: list[str] = [
+    "Abhishek Seetaram Naik",
+    "Akshata",
+    "Archana Gopal Marathi",
+    "Chaitra G Naik",
+    "Dattatraya V Hegde",
+    "Deepa Manjunatha Gouda",
+    "Fazil Unshalli",
+    "Ganesh Hegde",
+    "Harsha N",
+    "Harshita Suresh Naik",
+    "Keerthana M",
+    "Krishnamoorthy",
+    "Laxmi R Palankar",
+    "Manjunata D Gosavi",
+    "Mohan Gowda",
+    "Narendra",
+    "Netravati Prakash Kothari",
+    "Nivedita M K",
+    "Parashuram T Naik",
+    "Pooja Naik",
+    "Raghavendra",
+    "Raghavendra S Palankar",
+    "Renuka D H",
+    "Sharath Nagendra Naik",
+    "Subramanya Ganesh Hegde",
 ]

@@ -11,6 +11,11 @@ from playwright.async_api import async_playwright
 router = APIRouter()
 log = logging.getLogger(__name__)
 
+_BRANCH_CREDENTIALS = {
+    "HOSPET ROAD":   ("9448188002", "Q"),
+    "SHIVAJI CHOWK": ("ghegde",    "q"),
+}
+
 _browser_alive = threading.Event()
 _kill_signal   = threading.Event()
 
@@ -32,6 +37,7 @@ class DCDetails(BaseModel):
     dc_date: str = ""       # YYYY-MM-DD from frontend date input
     supplier: str = ""
     checked_by: str = ""
+    branch: str = "HOSPET ROAD"
     products: list[ProductEntry] = []
 
 
@@ -39,10 +45,11 @@ class DCDetails(BaseModel):
 # LOGIN
 # =========================================================
 
-async def login(page):
+async def login(page, branch: str = "HOSPET ROAD"):
+    username, password = _BRANCH_CREDENTIALS.get(branch, _BRANCH_CREDENTIALS["HOSPET ROAD"])
     await page.goto("https://shubhadahealth.com:7007/")
-    await page.locator("#mat-input-0").fill("9448188002")
-    await page.locator("#mat-input-1").fill("Q")
+    await page.locator("#mat-input-0").fill(username)
+    await page.locator("#mat-input-1").fill(password)
     await page.keyboard.press("Enter")
     await page.wait_for_load_state("networkidle")
 
@@ -264,7 +271,7 @@ async def _browser_coroutine(details: DCDetails):
         browser = await pw.chromium.launch(headless=False)
         page = await browser.new_page()
 
-        await login(page)
+        await login(page, details.branch)
         await open_sidebar(page)
         await open_dc_inward(page)
         await fill_dc_details(page, details)

@@ -23,6 +23,10 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      '/suppliers': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
 });
