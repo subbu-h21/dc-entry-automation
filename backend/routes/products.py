@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Query
 from rapidfuzz import process, fuzz
 
@@ -6,10 +8,12 @@ from services.matcher_instance import get_matcher
 from services.product_matcher import _normalize, _JUNK_PREFIX_DISPLAY
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 @router.get("/suppliers")
 def get_suppliers():
+    log.info("GET /suppliers — returning %d suppliers", len(ALL_SUPPLIERS))
     return {"suppliers": ALL_SUPPLIERS}
 
 

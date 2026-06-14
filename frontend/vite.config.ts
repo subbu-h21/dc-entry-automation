@@ -27,6 +27,14 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      '/screenshot': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/save-dc': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
 });

@@ -1,8 +1,11 @@
 import csv
 import html as _html
+import logging
 import os
 
 from dotenv import load_dotenv
+
+log = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -28,6 +31,7 @@ _suppliers_csv = os.path.join(_root, "supplier_names.csv")
 
 def _load_suppliers() -> list[str]:
     if not os.path.exists(_suppliers_csv):
+        log.warning("supplier_names.csv not found at %s — supplier list will be empty", _suppliers_csv)
         return []
     names = []
     with open(_suppliers_csv, newline="", encoding="utf-8") as f:
@@ -35,6 +39,7 @@ def _load_suppliers() -> list[str]:
             name = _html.unescape(row.get("Supplier Name", "")).strip()
             if name:
                 names.append(name)
+    log.info("Loaded %d suppliers from %s", len(names), _suppliers_csv)
     return sorted(names, key=str.upper)
 
 ALL_SUPPLIERS: list[str] = _load_suppliers()

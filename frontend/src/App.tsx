@@ -86,18 +86,25 @@ const inputStyle: React.CSSProperties = {
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [status, setStatus] = useState<Status>('idle');
+  const [products, setProducts] = useState<Product[]>(() => {
+    try { return JSON.parse(localStorage.getItem('dc_products') || '[]'); } catch { return []; }
+  });
+  const [status, setStatus] = useState<Status>(() => {
+    try { return JSON.parse(localStorage.getItem('dc_products') || '[]').length > 0 ? 'success' : 'idle'; } catch { return 'idle'; }
+  });
   const [errorMsg, setErrorMsg] = useState('');
   const [launchStatus, setLaunchStatus] = useState<LaunchStatus>('idle');
-  const [dcNumber, setDcNumber]     = useState('');
-  const [dcDate, setDcDate]         = useState('');
-  const [supplier, setSupplier]     = useState('');
-  const [checkedBy, setCheckedBy]   = useState('Ganesh Hegde');
+  const [dcNumber, setDcNumber]     = useState(() => localStorage.getItem('dc_number')     ?? '');
+  const [dcDate, setDcDate]         = useState(() => localStorage.getItem('dc_date')       ?? '');
+  const [supplier, setSupplier]     = useState(() => localStorage.getItem('dc_supplier')   ?? '');
+  const [checkedBy, setCheckedBy]   = useState(() => localStorage.getItem('dc_checked_by') ?? 'Ganesh Hegde');
   const [extractionModel, setExtractionModel] = useState('google/gemini-3.1-flash-lite');
   const [reasoning, setReasoning] = useState(false);
-  const [branch, setBranch] = useState('HOSPET ROAD');
+  const [branch, setBranch] = useState(() => localStorage.getItem('dc_branch') ?? 'HOSPET ROAD');
   const [suppliers, setSuppliers] = useState<string[]>([]);
+  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem('dc_session_id'));
 
   useEffect(() => {
     fetch('/suppliers')
@@ -106,14 +113,41 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  // Persist key state to localStorage
+  useEffect(() => { localStorage.setItem('dc_products',   JSON.stringify(products)); }, [products]);
+  useEffect(() => { localStorage.setItem('dc_number',     dcNumber); },    [dcNumber]);
+  useEffect(() => { localStorage.setItem('dc_date',       dcDate); },      [dcDate]);
+  useEffect(() => { localStorage.setItem('dc_supplier',   supplier); },    [supplier]);
+  useEffect(() => { localStorage.setItem('dc_checked_by', checkedBy); },   [checkedBy]);
+  useEffect(() => { localStorage.setItem('dc_branch',     branch); },      [branch]);
+
+  // Restore screenshot on page load if backend still has one for this session
+  useEffect(() => {
+    const sid = localStorage.getItem('dc_session_id');
+    if (!sid) return;
+    fetch(`/screenshot/${sid}`)
+      .then(r => r.ok ? r.blob() : null)
+      .then(blob => { if (blob) setScreenshotUrl(URL.createObjectURL(blob)); })
+      .catch(() => {});
+  }, []);
+
   const selectedModelMeta = EXTRACTION_MODELS.find(m => m.value === extractionModel);
   const reasoningSupported = selectedModelMeta?.supportsReasoning ?? false;
 
   const handleFileSelect = useCallback((selected: File) => {
+    // Clear all persisted state for the new entry
+    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier', 'dc_session_id'].forEach(k => localStorage.removeItem(k));
+    setSessionId(null);
     setFile(selected);
     setProducts([]);
     setStatus('idle');
     setErrorMsg('');
+    setDcNumber('');
+    setDcDate('');
+    setSupplier('');
+    setScreenshotUrl(null);
+    setSaveStatus('idle');
+    setLaunchStatus('idle');
 
     const url = URL.createObjectURL(selected);
     setPreviewUrl((prev) => {
@@ -154,10 +188,23 @@ export default function App() {
     }
   };
 
+  const handleSaveDC = async () => {
+    if (!sessionId) return;
+    setSaveStatus('saving');
+    try {
+      await fetch(`/save-dc/${sessionId}`, { method: 'POST' });
+      setSaveStatus('saved');
+    } catch {
+      setSaveStatus('idle');
+    }
+  };
+
   const handleLaunchBrowser = async (resolvedProducts: ResolvedProduct[]) => {
     setLaunchStatus('loading');
+    setScreenshotUrl(null);
+    setSaveStatus('idle');
     try {
-      await fetch('/launch-browser', {
+      const res = await fetch('/launch-browser', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -169,11 +216,30 @@ export default function App() {
           products: resolvedProducts,
         }),
       });
+      const data = await res.json();
+      const sid = data.session_id as string;
+      setSessionId(sid);
+      localStorage.setItem('dc_session_id', sid);
       setLaunchStatus('open');
     } catch {
       setLaunchStatus('idle');
     }
   };
+
+  useEffect(() => {
+    if (launchStatus !== 'open' || !sessionId) return;
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch(`/screenshot/${sessionId}`);
+        if (r.ok) {
+          const blob = await r.blob();
+          setScreenshotUrl(URL.createObjectURL(blob));
+          clearInterval(interval);
+        }
+      } catch {}
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [launchStatus, sessionId]);
 
   const canExtract = file !== null && status !== 'loading';
 
@@ -451,6 +517,35 @@ export default function App() {
               />
             )}
           </SectionCard>
+
+          {screenshotUrl && (
+            <SectionCard title="DC Entry Screenshot" icon={<TableIcon />}>
+              <img
+                src={screenshotUrl}
+                alt="DC entry screenshot"
+                style={{ width: '100%', borderRadius: 'var(--radius-sm)', display: 'block', marginBottom: 16 }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={handleSaveDC}
+                  disabled={saveStatus !== 'idle'}
+                  style={{
+                    background: saveStatus === 'saved' ? 'var(--success)' : 'var(--accent)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '10px 28px',
+                    fontSize: '15px',
+                    fontWeight: 600,
+                    cursor: saveStatus !== 'idle' ? 'not-allowed' : 'pointer',
+                    opacity: saveStatus === 'saving' ? 0.7 : 1,
+                  }}
+                >
+                  {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved ✓' : 'Save DC'}
+                </button>
+              </div>
+            </SectionCard>
+          )}
         </div>
       </main>
 

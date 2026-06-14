@@ -1,5 +1,11 @@
 import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 from config import ALLOWED_ORIGINS, PORT
 from dotenv import load_dotenv
 
@@ -11,12 +17,6 @@ from routes.extract import router as extract_router
 from routes.browser import router as browser_router
 from routes.voice import router as voice_router
 from routes.products import router as products_router
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
-    datefmt="%H:%M:%S",
-)
 
 app = FastAPI(title="Pharmacy Bill Extractor")
 

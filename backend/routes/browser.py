@@ -2,9 +2,11 @@ import asyncio
 import logging
 import re
 import threading
+import uuid
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 from playwright.async_api import async_playwright
 
@@ -16,8 +18,16 @@ _BRANCH_CREDENTIALS = {
     "SHIVAJI CHOWK": ("ghegde",    "q"),
 }
 
-_browser_alive = threading.Event()
-_kill_signal   = threading.Event()
+
+class _Session:
+    def __init__(self):
+        self.alive      = threading.Event()
+        self.kill       = threading.Event()
+        self.save       = threading.Event()
+        self.screenshot: bytes | None = None
+
+
+_sessions: dict[str, _Session] = {}
 
 
 class ProductEntry(BaseModel):
@@ -93,7 +103,7 @@ async def fill_dc_date(page, value: str):
         log.warning("Invalid dc_date format: %r — expected YYYY-MM-DD", value)
         return
 
-    formatted = dt.strftime("%d/%m/%Y")
+    formatted = dt.strftime("%m/%d/%Y")
 
     # Angular readonly datepicker — unlock and type
     await page.evaluate("() => document.querySelector('#mat-input-6').removeAttribute('readonly')")
@@ -266,7 +276,9 @@ async def fill_products(page, products: list[ProductEntry]):
 # MAIN COROUTINE
 # =========================================================
 
-async def _browser_coroutine(details: DCDetails):
+async def _browser_coroutine(session_id: str, details: DCDetails):
+    session = _sessions[session_id]
+
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=False)
         page = await browser.new_page()
@@ -277,36 +289,61 @@ async def _browser_coroutine(details: DCDetails):
         await fill_dc_details(page, details)
         await fill_products(page, details.products)
 
+        session.screenshot = await page.screenshot()
+        log.info("Screenshot captured for session %s (%d bytes)", session_id, len(session.screenshot))
+
         while browser.is_connected():
-            if _kill_signal.is_set():
+            if session.kill.is_set():
                 await browser.close()
                 break
+            if session.save.is_set():
+                session.save.clear()
+                try:
+                    await page.locator('button.buttoncolor', has_text='Save').first.click()
+                    log.info("Clicked Save for session %s", session_id)
+                except Exception:
+                    log.exception("Failed to click Save for session %s", session_id)
             await asyncio.sleep(0.5)
 
-    _browser_alive.clear()
+    session.alive.clear()
 
 
-def _browser_worker(details: DCDetails):
-    _browser_alive.set()
+def _browser_worker(session_id: str, details: DCDetails):
+    session = _sessions[session_id]
+    session.alive.set()
     loop = asyncio.ProactorEventLoop()
     asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(_browser_coroutine(details))
+        loop.run_until_complete(_browser_coroutine(session_id, details))
     except Exception:
-        log.exception("Browser worker crashed")
+        log.exception("Browser worker crashed for session %s", session_id)
     finally:
         loop.close()
-        _browser_alive.clear()
+        session.alive.clear()
+
+
+@router.get("/screenshot/{session_id}")
+def get_screenshot(session_id: str):
+    session = _sessions.get(session_id)
+    if not session or session.screenshot is None:
+        raise HTTPException(status_code=404, detail="No screenshot yet")
+    return Response(content=session.screenshot, media_type="image/png")
+
+
+@router.post("/save-dc/{session_id}")
+def save_dc(session_id: str):
+    session = _sessions.get(session_id)
+    if not session or not session.alive.is_set():
+        raise HTTPException(status_code=400, detail="No active browser session")
+    session.save.set()
+    return {"status": "saving"}
 
 
 @router.post("/launch-browser")
 def launch_browser(details: DCDetails = DCDetails()):
-    if _browser_alive.is_set():
-        log.info("Closing existing browser before relaunch")
-        _kill_signal.set()
-        _browser_alive.wait(timeout=5)
-
-    _kill_signal.clear()
-    t = threading.Thread(target=_browser_worker, args=(details,), daemon=True)
+    session_id = str(uuid.uuid4())
+    _sessions[session_id] = _Session()
+    t = threading.Thread(target=_browser_worker, args=(session_id, details), daemon=True)
     t.start()
-    return {"status": "launched"}
+    log.info("Launched browser session %s", session_id)
+    return {"status": "launched", "session_id": session_id}
