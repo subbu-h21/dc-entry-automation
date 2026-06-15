@@ -35,7 +35,7 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
-      '/inbox': {
+      '^/inbox(/|$)': {
         target: 'http://localhost:3001',
         changeOrigin: true,
       },

@@ -230,6 +230,7 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem('dc_session_id'));
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
+  const inboxInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch('/suppliers')
@@ -327,6 +328,19 @@ export default function App() {
   const handleExtract = () => {
     if (!file) return;
     doExtract(file);
+  };
+
+  const handleInboxUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    e.target.value = '';
+    try {
+      const fd = new FormData();
+      fd.append('image', f);
+      await fetch('/inbox/upload', { method: 'POST', body: fd });
+      const res = await fetch('/inbox');
+      if (res.ok) setInboxItems(await res.json());
+    } catch {}
   };
 
   const handleInboxClick = async (item: InboxItem) => {
@@ -537,28 +551,38 @@ export default function App() {
                 ))}
               </div>
             )}
-            <a
-              href="/inbox-upload"
-              target="_blank"
-              rel="noopener noreferrer"
+            <input
+              ref={inboxInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+              style={{ display: 'none' }}
+              onChange={handleInboxUpload}
+            />
+            <button
+              onClick={() => inboxInputRef.current?.click()}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                fontSize: '12px',
+                padding: '7px 14px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)',
+                background: 'var(--surface)',
+                color: 'var(--text-secondary)',
+                fontSize: '13px',
                 fontWeight: 500,
-                color: 'var(--accent)',
-                textDecoration: 'none',
+                cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 flexShrink: 0,
               }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
-                <line x1="12" y1="18" x2="12" y2="18" strokeWidth="3" />
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              Open on phone
-            </a>
+              Add Image
+            </button>
           </div>
         </SectionCard>
 
