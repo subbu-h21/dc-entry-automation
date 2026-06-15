@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef, ChangeEvent } from 'react';
 import ImageUpload from './components/ImageUpload';
 import ResultsTable, { Product, ResolvedProduct } from './components/ResultsTable';
 import {
@@ -10,10 +10,21 @@ import {
   Spinner,
   LoadingSpinner,
   DCDetailsIcon,
+  CameraIcon,
 } from './components/icons';
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
 type LaunchStatus = 'idle' | 'loading' | 'open';
+type InboxItem = { id: string; filename: string; uploaded_at: string; thumbnail_url: string };
+
+function formatInboxTime(iso: string): string {
+  const diffMins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return new Date(iso).toLocaleDateString();
+}
 
 const EXTRACTION_MODELS = [
   { value: 'google/gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      supportsReasoning: true },
@@ -83,6 +94,119 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
+function InboxUploadPage() {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
+
+  const handleChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    e.target.value = '';
+    setUploadState('uploading');
+    try {
+      const fd = new FormData();
+      fd.append('image', f);
+      const res = await fetch('/inbox/upload', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error();
+      setUploadState('done');
+      setTimeout(() => setUploadState('idle'), 2500);
+    } catch {
+      setUploadState('error');
+    }
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'var(--bg)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 32,
+      padding: 32,
+    }}>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleChange}
+      />
+
+      <p style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+        DC Invoice Inbox
+      </p>
+
+      {uploadState === 'idle' && (
+        <button
+          onClick={() => inputRef.current?.click()}
+          style={{
+            width: 200,
+            height: 200,
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+            border: 'none',
+            color: '#fff',
+            cursor: 'pointer',
+            boxShadow: '0 8px 32px rgba(37,99,235,0.4)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+            fontSize: '17px',
+            fontWeight: 700,
+          }}
+        >
+          <CameraIcon color="#fff" />
+          Take Photo
+        </button>
+      )}
+
+      {uploadState === 'uploading' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <Spinner />
+          <p style={{ fontSize: '16px', fontWeight: 500, color: 'var(--text-secondary)' }}>Uploading…</p>
+        </div>
+      )}
+
+      {uploadState === 'done' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="9 12 11 14 15 10" />
+          </svg>
+          <p style={{ fontSize: '20px', fontWeight: 700, color: 'var(--success)' }}>Sent to inbox</p>
+          <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Ready for next photo</p>
+        </div>
+      )}
+
+      {uploadState === 'error' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <p style={{ fontSize: '18px', fontWeight: 600, color: 'var(--error)' }}>Upload failed</p>
+          <button
+            onClick={() => setUploadState('idle')}
+            style={{
+              padding: '12px 28px',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--error)',
+              background: 'transparent',
+              color: 'var(--error)',
+              fontSize: '15px',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -105,6 +229,7 @@ export default function App() {
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem('dc_session_id'));
+  const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
 
   useEffect(() => {
     fetch('/suppliers')
@@ -120,6 +245,19 @@ export default function App() {
   useEffect(() => { localStorage.setItem('dc_supplier',   supplier); },    [supplier]);
   useEffect(() => { localStorage.setItem('dc_checked_by', checkedBy); },   [checkedBy]);
   useEffect(() => { localStorage.setItem('dc_branch',     branch); },      [branch]);
+
+  // Poll inbox every 10 seconds
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch('/inbox');
+        if (res.ok) setInboxItems(await res.json());
+      } catch {}
+    };
+    poll();
+    const id = setInterval(poll, 10_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Restore screenshot on page load if backend still has one for this session
   useEffect(() => {
@@ -156,15 +294,13 @@ export default function App() {
     });
   }, []);
 
-  const handleExtract = async () => {
-    if (!file) return;
-
+  const doExtract = async (imageFile: File) => {
     setStatus('loading');
     setErrorMsg('');
     setProducts([]);
 
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('image', imageFile);
     formData.append('model', extractionModel);
     formData.append('reasoning', String(reasoning));
 
@@ -186,6 +322,29 @@ export default function App() {
       setErrorMsg(msg);
       setStatus('error');
     }
+  };
+
+  const handleExtract = () => {
+    if (!file) return;
+    doExtract(file);
+  };
+
+  const handleInboxClick = async (item: InboxItem) => {
+    try {
+      const res = await fetch(`/inbox/image/${item.id}`);
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const ext = item.filename.split('.').pop() ?? 'jpg';
+      const mimeMap: Record<string, string> = {
+        jpg: 'image/jpeg', jpeg: 'image/jpeg',
+        png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+      };
+      const imageFile = new File([blob], item.filename, { type: mimeMap[ext] ?? 'image/jpeg' });
+      handleFileSelect(imageFile);
+      fetch(`/inbox/${item.id}`, { method: 'DELETE' }).catch(() => {});
+      setInboxItems(prev => prev.filter(i => i.id !== item.id));
+      doExtract(imageFile);
+    } catch {}
   };
 
   const handleSaveDC = async () => {
@@ -242,6 +401,10 @@ export default function App() {
   }, [launchStatus, sessionId]);
 
   const canExtract = file !== null && status !== 'loading';
+
+  if (window.location.pathname === '/inbox-upload') {
+    return <InboxUploadPage />;
+  }
 
   return (
     <div
@@ -320,6 +483,61 @@ export default function App() {
           gap: 28,
         }}
       >
+        {/* Inbox section */}
+        <SectionCard
+          title="Inbox"
+          icon={
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+              <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
+            </svg>
+          }
+          badge={inboxItems.length > 0 ? inboxItems.length : undefined}
+          pulse={inboxItems.length > 0}
+        >
+          {inboxItems.length === 0 ? (
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No images in inbox</p>
+          ) : (
+            <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
+              {inboxItems.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => handleInboxClick(item)}
+                  style={{
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--surface-2)',
+                    padding: 0,
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)';
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 2px var(--accent-light)';
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                  }}
+                >
+                  <img
+                    src={item.thumbnail_url}
+                    alt=""
+                    style={{ width: 100, height: 80, objectFit: 'cover', display: 'block' }}
+                  />
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '4px 8px', display: 'block', textAlign: 'center' }}>
+                    {formatInboxTime(item.uploaded_at)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+
         {/* Upload section */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <SectionCard title="Upload Invoice" icon={<UploadSectionIcon />}>
@@ -572,11 +790,13 @@ function SectionCard({
   title,
   icon,
   badge,
+  pulse,
   children,
 }: {
   title: string;
   icon: React.ReactNode;
   badge?: number;
+  pulse?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -603,6 +823,12 @@ function SectionCard({
         <span style={{ fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)', flex: 1 }}>
           {title}
         </span>
+        {pulse && (
+          <span
+            className="inbox-pulse-dot"
+            style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, display: 'inline-block' }}
+          />
+        )}
         {badge !== undefined && (
           <span
             style={{

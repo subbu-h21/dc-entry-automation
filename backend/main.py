@@ -17,6 +17,7 @@ from routes.extract import router as extract_router
 from routes.browser import router as browser_router
 from routes.voice import router as voice_router
 from routes.products import router as products_router
+from routes.inbox import router as inbox_router
 
 app = FastAPI(title="Pharmacy Bill Extractor")
 
@@ -31,6 +32,7 @@ app.include_router(extract_router)
 app.include_router(browser_router)
 app.include_router(voice_router)
 app.include_router(products_router)
+app.include_router(inbox_router)
 
 
 @app.get("/health")

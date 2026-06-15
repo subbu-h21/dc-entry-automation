@@ -1,0 +1,17 @@
+{
+  "name": "DC Invoice Inbox",
+  "short_name": "Inbox",
+  "description": "Capture DC invoice photos from your phone",
+  "start_url": "/inbox-upload",
+  "display": "standalone",
+  "background_color": "#f0f4f8",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/pill.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
