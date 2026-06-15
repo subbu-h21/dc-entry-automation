@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { AlertIcon, CopyIcon, CheckSmIcon, BrowserIcon, MiniSpinner, MiniSpinnerDark, MicIcon, StopRecIcon } from './icons';
+import * as XLSX from 'xlsx';
+import { AlertIcon, CopyIcon, BrowserIcon, MiniSpinner, MiniSpinnerDark, MicIcon, StopRecIcon } from './icons';
 
 export interface Candidate {
   index: number;
@@ -78,7 +79,6 @@ interface Props {
 }
 
 export default function ResultsTable({ products, onOpenDCEntry, launchStatus, onDCUpdate }: Props) {
-  const [copied, setCopied]           = useState(false);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [pending, setPending]         = useState<Record<number, Override | null>>({});
   const [overrides, setOverrides]     = useState<Record<number, Override | null>>({});
@@ -175,16 +175,25 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
     sum + resolvedField(idx, 'rate') * resolvedField(idx, 'quantity'), 0
   );
 
-  const copyAsCSV = () => {
-    const header = 'Product Name,Quantity,Batch Number,Matched Product,Pack';
+  const downloadExcel = () => {
     const rows = products.map((_, i) => {
       const r = resolvedProduct(i);
-      return `"${resolvedField(i, 'product_name')}",${resolvedField(i, 'quantity')},"${resolvedField(i, 'batch_number')}","${r?.product ?? ''}","${r?.pack ?? ''}"`;
+      return {
+        'SL':         i + 1,
+        'Name':       r?.product ?? resolvedField(i, 'product_name'),
+        'Batch':      resolvedField(i, 'batch_number'),
+        'Expiry (mm-yy)': resolvedField(i, 'expiry'),
+        'MRP':        resolvedField(i, 'mrp') || '',
+        'Rate':       resolvedField(i, 'rate') || '',
+        'Qty':        resolvedField(i, 'quantity'),
+        'Free':       resolvedField(i, 'free') || '',
+        'Disc%':      resolvedField(i, 'disc_percent') || '',
+      };
     });
-    navigator.clipboard.writeText([header, ...rows].join('\n')).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'DC Products');
+    XLSX.writeFile(wb, 'dc_products.xlsx');
   };
 
   const matchedCount    = products.filter((_, i) => resolvedProduct(i)?.product).length;
@@ -283,9 +292,9 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
         {hasMatching && <Pill label={`${matchedCount} matched`}  color="var(--success)" bg="var(--success-light)" />}
         {notStockedCount > 0 && <Pill label={`${notStockedCount} not stocked`} color="var(--warning)" bg="var(--warning-light)" />}
         <div style={{ flex: 1 }} />
-        <button onClick={copyAsCSV} style={secondaryBtn(copied)}>
-          {copied ? <CheckSmIcon color="var(--success)" /> : <CopyIcon color="var(--text-secondary)" />}
-          {copied ? 'Copied!' : 'Copy CSV'}
+        <button onClick={downloadExcel} style={secondaryBtn(false)}>
+          <CopyIcon color="var(--text-secondary)" />
+          Download Excel
         </button>
         <button
           onClick={voiceRecording ? stopVoice : startVoice}
