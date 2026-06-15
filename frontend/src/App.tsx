@@ -495,47 +495,71 @@ export default function App() {
           badge={inboxItems.length > 0 ? inboxItems.length : undefined}
           pulse={inboxItems.length > 0}
         >
-          {inboxItems.length === 0 ? (
-            <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No images in inbox</p>
-          ) : (
-            <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
-              {inboxItems.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => handleInboxClick(item)}
-                  style={{
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius-sm)',
-                    background: 'var(--surface-2)',
-                    padding: 0,
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    transition: 'border-color 0.15s, box-shadow 0.15s',
-                  }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)';
-                    (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 2px var(--accent-light)';
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
-                    (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
-                  }}
-                >
-                  <img
-                    src={item.thumbnail_url}
-                    alt=""
-                    style={{ width: 100, height: 80, objectFit: 'cover', display: 'block' }}
-                  />
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '4px 8px', display: 'block', textAlign: 'center' }}>
-                    {formatInboxTime(item.uploaded_at)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+            {inboxItems.length === 0 ? (
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No images in inbox</p>
+            ) : (
+              <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
+                {inboxItems.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => handleInboxClick(item)}
+                    style={{
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--surface-2)',
+                      padding: 0,
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                      overflow: 'hidden',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      transition: 'border-color 0.15s, box-shadow 0.15s',
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--accent)';
+                      (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 0 2px var(--accent-light)';
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
+                      (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                    }}
+                  >
+                    <img
+                      src={item.thumbnail_url}
+                      alt=""
+                      style={{ width: 100, height: 80, objectFit: 'cover', display: 'block' }}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '4px 8px', display: 'block', textAlign: 'center' }}>
+                      {formatInboxTime(item.uploaded_at)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <a
+              href="/inbox-upload"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: '12px',
+                fontWeight: 500,
+                color: 'var(--accent)',
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
+                <line x1="12" y1="18" x2="12" y2="18" strokeWidth="3" />
+              </svg>
+              Open on phone
+            </a>
+          </div>
         </SectionCard>
 
         {/* Upload section */}
