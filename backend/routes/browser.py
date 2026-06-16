@@ -1,17 +1,37 @@
 import asyncio
 import logging
+import os
 import re
+import shutil
 import threading
+import time
 import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from playwright.async_api import async_playwright
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCREENSHOTS_DIR = os.path.join(_BACKEND_DIR, "screenshots")
+
+
+def _cleanup_old_screenshots():
+    if not os.path.isdir(SCREENSHOTS_DIR):
+        return
+    cutoff = time.time() - (5 * 3600)
+    for name in os.listdir(SCREENSHOTS_DIR):
+        folder = os.path.join(SCREENSHOTS_DIR, name)
+        if os.path.isdir(folder) and os.path.getmtime(folder) < cutoff:
+            shutil.rmtree(folder, ignore_errors=True)
+            log.info("Cleaned up old screenshot folder: %s", name)
+
+
+_cleanup_old_screenshots()
 
 _BRANCH_CREDENTIALS = {
     "HOSPET ROAD":   ("9448188002", "Q"),
@@ -21,10 +41,9 @@ _BRANCH_CREDENTIALS = {
 
 class _Session:
     def __init__(self):
-        self.alive      = threading.Event()
-        self.kill       = threading.Event()
-        self.save       = threading.Event()
-        self.screenshot: bytes | None = None
+        self.alive = threading.Event()
+        self.kill  = threading.Event()
+        self.save  = threading.Event()
 
 
 _sessions: dict[str, _Session] = {}
@@ -43,6 +62,7 @@ class ProductEntry(BaseModel):
 
 
 class DCDetails(BaseModel):
+    tab_id: str = ""
     dc_number: str = ""
     dc_date: str = ""       # YYYY-MM-DD from frontend date input
     supplier: str = ""
@@ -105,7 +125,7 @@ async def fill_dc_date(page, value: str):
 
     formatted = dt.strftime("%m/%d/%Y")
 
-    # Angular readonly datepicker — unlock and type
+    # Angular readonly datepicker — unlock and type MM/DD/YYYY, press Tab to commit.
     await page.evaluate("() => document.querySelector('#mat-input-6').removeAttribute('readonly')")
     await page.click("#mat-input-6")
     await page.keyboard.type(formatted)
@@ -289,8 +309,12 @@ async def _browser_coroutine(session_id: str, details: DCDetails):
         await fill_dc_details(page, details)
         await fill_products(page, details.products)
 
-        session.screenshot = await page.screenshot()
-        log.info("Screenshot captured for session %s (%d bytes)", session_id, len(session.screenshot))
+        screenshot_bytes = await page.screenshot()
+        screenshot_path = os.path.join(SCREENSHOTS_DIR, session_id, "screenshot.png")
+        os.makedirs(os.path.dirname(screenshot_path), exist_ok=True)
+        with open(screenshot_path, "wb") as f:
+            f.write(screenshot_bytes)
+        log.info("Screenshot saved to disk for session %s", session_id)
 
         while browser.is_connected():
             if session.kill.is_set():
@@ -322,12 +346,12 @@ def _browser_worker(session_id: str, details: DCDetails):
         session.alive.clear()
 
 
-@router.get("/screenshot/{session_id}")
-def get_screenshot(session_id: str):
-    session = _sessions.get(session_id)
-    if not session or session.screenshot is None:
+@router.get("/screenshot/{tab_id}")
+def get_screenshot(tab_id: str):
+    path = os.path.join(SCREENSHOTS_DIR, tab_id, "screenshot.png")
+    if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="No screenshot yet")
-    return Response(content=session.screenshot, media_type="image/png")
+    return FileResponse(path, media_type="image/png")
 
 
 @router.post("/save-dc/{session_id}")
@@ -341,9 +365,9 @@ def save_dc(session_id: str):
 
 @router.post("/launch-browser")
 def launch_browser(details: DCDetails = DCDetails()):
-    session_id = str(uuid.uuid4())
-    _sessions[session_id] = _Session()
-    t = threading.Thread(target=_browser_worker, args=(session_id, details), daemon=True)
+    tab_id = details.tab_id or str(uuid.uuid4())
+    _sessions[tab_id] = _Session()
+    t = threading.Thread(target=_browser_worker, args=(tab_id, details), daemon=True)
     t.start()
-    log.info("Launched browser session %s", session_id)
-    return {"status": "launched", "session_id": session_id}
+    log.info("Launched browser session for tab %s", tab_id)
+    return {"status": "launched"}

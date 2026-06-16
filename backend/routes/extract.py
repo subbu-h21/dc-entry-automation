@@ -98,7 +98,7 @@ async def extract(image: UploadFile = File(...), model: str | None = Form(None),
 
     try:
         # Step 1 — Gemini extracts product_name / quantity / batch_number
-        result = extract_invoice_data(image_bytes, image.content_type, model=model, reasoning=reasoning)
+        result = await extract_invoice_data(image_bytes, image.content_type, model=model, reasoning=reasoning)
         products = result.get("products", [])
 
         # Step 1b — Apply X+Y free-qty rule (fallback if Gemini missed it)

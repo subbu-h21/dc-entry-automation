@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Fragment } from 'react';
 import * as XLSX from 'xlsx';
-import { AlertIcon, CopyIcon, BrowserIcon, MiniSpinner, MiniSpinnerDark, MicIcon, StopRecIcon } from './icons';
+import { AlertIcon, CopyIcon, BrowserIcon, CheckSmIcon, MiniSpinner, MiniSpinnerDark, MicIcon, StopRecIcon } from './icons';
 
 export interface Candidate {
   index: number;
@@ -457,9 +457,8 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                 const modified = overrides[idx] !== undefined;
 
                 return (
-                  <>
+                  <Fragment key={idx}>
                     <tr
-                      key={`row-${idx}`}
                       style={{
                         background: isOpen ? 'var(--accent-light)' : idx % 2 === 0 ? 'var(--surface)' : 'var(--surface-2)',
                         transition: 'background 0.15s',
@@ -612,7 +611,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
 
                     {/* ── Inline candidate picker ── */}
                     {isOpen && (
-                      <tr key={`picker-${idx}`}>
+                      <tr>
                         <td colSpan={hasMatching ? 14 : 10} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
                           <CandidatePicker
                             product={p}
@@ -624,7 +623,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

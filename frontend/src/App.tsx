@@ -228,7 +228,13 @@ export default function App() {
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem('dc_session_id'));
+  const [tabId] = useState<string>(() => {
+    const existing = sessionStorage.getItem('tab_id');
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    sessionStorage.setItem('tab_id', id);
+    return id;
+  });
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const inboxInputRef = useRef<HTMLInputElement>(null);
 
@@ -260,11 +266,9 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Restore screenshot on page load if backend still has one for this session
+  // Restore screenshot on page load using this tab's persistent ID
   useEffect(() => {
-    const sid = localStorage.getItem('dc_session_id');
-    if (!sid) return;
-    fetch(`/screenshot/${sid}`)
+    fetch(`/screenshot/${tabId}`)
       .then(r => r.ok ? r.blob() : null)
       .then(blob => { if (blob) setScreenshotUrl(URL.createObjectURL(blob)); })
       .catch(() => {});
@@ -275,8 +279,7 @@ export default function App() {
 
   const handleFileSelect = useCallback((selected: File) => {
     // Clear all persisted state for the new entry
-    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier', 'dc_session_id'].forEach(k => localStorage.removeItem(k));
-    setSessionId(null);
+    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier'].forEach(k => localStorage.removeItem(k));
     setFile(selected);
     setProducts([]);
     setStatus('idle');
@@ -362,10 +365,9 @@ export default function App() {
   };
 
   const handleSaveDC = async () => {
-    if (!sessionId) return;
     setSaveStatus('saving');
     try {
-      await fetch(`/save-dc/${sessionId}`, { method: 'POST' });
+      await fetch(`/save-dc/${tabId}`, { method: 'POST' });
       setSaveStatus('saved');
     } catch {
       setSaveStatus('idle');
@@ -381,6 +383,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          tab_id: tabId,
           dc_number: dcNumber,
           dc_date: dcDate,
           supplier,
@@ -389,10 +392,7 @@ export default function App() {
           products: resolvedProducts,
         }),
       });
-      const data = await res.json();
-      const sid = data.session_id as string;
-      setSessionId(sid);
-      localStorage.setItem('dc_session_id', sid);
+      await res.json();
       setLaunchStatus('open');
     } catch {
       setLaunchStatus('idle');
@@ -400,10 +400,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (launchStatus !== 'open' || !sessionId) return;
+    if (launchStatus !== 'open') return;
     const interval = setInterval(async () => {
       try {
-        const r = await fetch(`/screenshot/${sessionId}`);
+        const r = await fetch(`/screenshot/${tabId}`);
         if (r.ok) {
           const blob = await r.blob();
           setScreenshotUrl(URL.createObjectURL(blob));
@@ -412,7 +412,7 @@ export default function App() {
       } catch {}
     }, 2000);
     return () => clearInterval(interval);
-  }, [launchStatus, sessionId]);
+  }, [launchStatus, tabId]);
 
   const canExtract = file !== null && status !== 'loading';
 

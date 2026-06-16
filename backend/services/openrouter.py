@@ -3,7 +3,7 @@ import json
 import logging
 
 from config import EXTRACTION_MODEL, OPENROUTER_SITE_TITLE, OPENROUTER_SITE_URL
-from services.client import get_sync_client
+from services.client import get_async_client
 
 log = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ def _reasoning_body(model: str) -> dict:
     return {"reasoning": {"effort": "high"}}
 
 
-def extract_invoice_data(image_bytes: bytes, mime_type: str, model: str | None = None, reasoning: bool = False) -> dict:
+async def extract_invoice_data(image_bytes: bytes, mime_type: str, model: str | None = None, reasoning: bool = False) -> dict:
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     data_url = f"data:{mime_type};base64,{b64}"
 
@@ -188,7 +188,7 @@ def extract_invoice_data(image_bytes: bytes, mime_type: str, model: str | None =
 
     extra_body = _reasoning_body(chosen_model) if reasoning else {}
 
-    response = get_sync_client().chat.completions.create(
+    response = await get_async_client().chat.completions.create(
         extra_headers={
             "HTTP-Referer": OPENROUTER_SITE_URL,
             "X-OpenRouter-Title": OPENROUTER_SITE_TITLE,
