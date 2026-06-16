@@ -211,27 +211,30 @@ export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>(() => {
-    try { return JSON.parse(localStorage.getItem('dc_products') || '[]'); } catch { return []; }
+    try { return JSON.parse(sessionStorage.getItem('dc_products') || '[]'); } catch { return []; }
   });
   const [status, setStatus] = useState<Status>(() => {
-    try { return JSON.parse(localStorage.getItem('dc_products') || '[]').length > 0 ? 'success' : 'idle'; } catch { return 'idle'; }
+    try { return JSON.parse(sessionStorage.getItem('dc_products') || '[]').length > 0 ? 'success' : 'idle'; } catch { return 'idle'; }
   });
   const [errorMsg, setErrorMsg] = useState('');
   const [launchStatus, setLaunchStatus] = useState<LaunchStatus>('idle');
-  const [dcNumber, setDcNumber]     = useState(() => localStorage.getItem('dc_number')     ?? '');
-  const [dcDate, setDcDate]         = useState(() => localStorage.getItem('dc_date')       ?? '');
-  const [supplier, setSupplier]     = useState(() => localStorage.getItem('dc_supplier')   ?? '');
-  const [checkedBy, setCheckedBy]   = useState(() => localStorage.getItem('dc_checked_by') ?? 'Ganesh Hegde');
+  const [dcNumber, setDcNumber]     = useState(() => sessionStorage.getItem('dc_number')     ?? '');
+  const [dcDate, setDcDate]         = useState(() => sessionStorage.getItem('dc_date')       ?? '');
+  const [supplier, setSupplier]     = useState(() => sessionStorage.getItem('dc_supplier')   ?? '');
+  const [checkedBy, setCheckedBy]   = useState(() => sessionStorage.getItem('dc_checked_by') ?? 'Ganesh Hegde');
   const [extractionModel, setExtractionModel] = useState('google/gemini-3.1-flash-lite');
   const [reasoning, setReasoning] = useState(false);
-  const [branch, setBranch] = useState(() => localStorage.getItem('dc_branch') ?? 'HOSPET ROAD');
+  const [branch, setBranch] = useState(() => sessionStorage.getItem('dc_branch') ?? 'HOSPET ROAD');
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [tabId] = useState<string>(() => {
     const existing = sessionStorage.getItem('tab_id');
     if (existing) return existing;
-    const id = crypto.randomUUID();
+    const id = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : Array.from(crypto.getRandomValues(new Uint8Array(16)))
+          .map(b => b.toString(16).padStart(2, '0')).join('');
     sessionStorage.setItem('tab_id', id);
     return id;
   });
@@ -245,13 +248,13 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // Persist key state to localStorage
-  useEffect(() => { localStorage.setItem('dc_products',   JSON.stringify(products)); }, [products]);
-  useEffect(() => { localStorage.setItem('dc_number',     dcNumber); },    [dcNumber]);
-  useEffect(() => { localStorage.setItem('dc_date',       dcDate); },      [dcDate]);
-  useEffect(() => { localStorage.setItem('dc_supplier',   supplier); },    [supplier]);
-  useEffect(() => { localStorage.setItem('dc_checked_by', checkedBy); },   [checkedBy]);
-  useEffect(() => { localStorage.setItem('dc_branch',     branch); },      [branch]);
+  // Persist key state to sessionStorage
+  useEffect(() => { sessionStorage.setItem('dc_products',   JSON.stringify(products)); }, [products]);
+  useEffect(() => { sessionStorage.setItem('dc_number',     dcNumber); },    [dcNumber]);
+  useEffect(() => { sessionStorage.setItem('dc_date',       dcDate); },      [dcDate]);
+  useEffect(() => { sessionStorage.setItem('dc_supplier',   supplier); },    [supplier]);
+  useEffect(() => { sessionStorage.setItem('dc_checked_by', checkedBy); },   [checkedBy]);
+  useEffect(() => { sessionStorage.setItem('dc_branch',     branch); },      [branch]);
 
   // Poll inbox every 10 seconds
   useEffect(() => {
@@ -279,7 +282,7 @@ export default function App() {
 
   const handleFileSelect = useCallback((selected: File) => {
     // Clear all persisted state for the new entry
-    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier'].forEach(k => localStorage.removeItem(k));
+    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier'].forEach(k => sessionStorage.removeItem(k));
     setFile(selected);
     setProducts([]);
     setStatus('idle');
@@ -475,10 +478,10 @@ export default function App() {
                 lineHeight: 1.2,
               }}
             >
-              Pharmacy Bill Extractor
+              Shubhada Pharma DC extractor
             </h1>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-              Powered by Gemini 2.5 Flash
+              Click and Pick
             </p>
           </div>
         </div>

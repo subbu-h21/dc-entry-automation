@@ -1,12 +1,16 @@
 import asyncio
+import io
 import logging
 import os
 import re
 import shutil
+import tempfile
 import threading
 import time
 import uuid
 from datetime import datetime
+
+import openpyxl
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -293,6 +297,98 @@ async def fill_products(page, products: list[ProductEntry]):
 
 
 # =========================================================
+# EXCEL IMPORT
+# =========================================================
+
+def _generate_excel_bytes(products: list[ProductEntry]) -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "DC Products"
+    ws.append(["SL", "Name", "Batch", "Expiry (mm-yy)", "MRP", "Rate", "Qty", "Free", "Disc%"])
+    for i, p in enumerate(products):
+        ws.append([
+            i + 1,
+            p.matched_product or "",
+            p.batch_number,
+            _fmt_expiry(p.expiry),
+            p.mrp if p.mrp > 0 else "",
+            p.rate if p.rate > 0 else "",
+            p.quantity,
+            p.free if p.free > 0 else "",
+            p.disc_percent if p.disc_percent > 0 else "",
+        ])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def import_products_via_excel(page, products: list[ProductEntry]):
+    """Upload products as Excel via the Import hidden file input on the DC Inward page."""
+    excel_bytes = _generate_excel_bytes(products)
+    tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    try:
+        tmp.write(excel_bytes)
+        tmp.close()
+        file_input = page.locator('.hidden-file input[type="file"]')
+        await file_input.set_input_files(tmp.name)
+        log.info("Excel uploaded for import — waiting for rows to populate")
+        await page.wait_for_function(
+            f"() => document.querySelectorAll('#tab_id tr.ng-star-inserted').length >= {len(products)}",
+            timeout=15000,
+        )
+        log.info("Import complete: %d product rows loaded", len(products))
+    finally:
+        os.unlink(tmp.name)
+
+
+async def retrigger_calculations(page, product_count: int):
+    """Re-select each product via autocomplete to fire server-side pack/tax calculations.
+
+    After Excel import the cells are populated but Angular hasn't run its server
+    round-trip for each row yet (Pack, Factor, Tax, Gross Amt etc. are blank).
+    The fix is the same as what a user does manually: click the product name cell,
+    delete the last character so the autocomplete fires, arrow-down to the first
+    suggestion (which is the same product), and press Enter.  Angular then fetches
+    the pack/factor/tax data and the row turns fully calculated.
+    """
+    for i in range(product_count):
+        row = page.locator("#tab_id tr.ng-star-inserted").nth(i)
+        name_input = row.locator('input[name="prdname"]')
+
+        await name_input.click()
+        await page.wait_for_timeout(200)
+
+        # Go to end of the current product name text, delete one char to trigger autocomplete
+        await page.keyboard.press("End")
+        await page.wait_for_timeout(100)
+        await page.keyboard.press("Backspace")
+        await page.wait_for_timeout(500)
+
+        try:
+            await page.locator("mat-option").first.wait_for(state="visible", timeout=6000)
+            await page.wait_for_timeout(200)
+            await page.keyboard.press("ArrowDown")
+            await page.wait_for_timeout(150)
+            await page.keyboard.press("Enter")
+        except Exception:
+            log.warning("Autocomplete did not appear for row %d — skipping recalc", i + 1)
+            await page.keyboard.press("Escape")
+            continue
+
+        # Cursor lands on batch field once the server round-trip completes
+        try:
+            await page.wait_for_function(
+                "() => document.activeElement?.name === 'btch'",
+                timeout=10000,
+            )
+        except Exception:
+            log.warning("Batch focus timeout on row %d — calculations may be incomplete", i + 1)
+
+        await page.wait_for_timeout(200)
+        log.info("Recalculated row %d / %d", i + 1, product_count)
+
+
+# =========================================================
 # MAIN COROUTINE
 # =========================================================
 
@@ -307,7 +403,8 @@ async def _browser_coroutine(session_id: str, details: DCDetails):
         await open_sidebar(page)
         await open_dc_inward(page)
         await fill_dc_details(page, details)
-        await fill_products(page, details.products)
+        await import_products_via_excel(page, details.products)
+        await retrigger_calculations(page, len(details.products))
 
         screenshot_bytes = await page.screenshot()
         screenshot_path = os.path.join(SCREENSHOTS_DIR, session_id, "screenshot.png")
@@ -351,7 +448,7 @@ def get_screenshot(tab_id: str):
     path = os.path.join(SCREENSHOTS_DIR, tab_id, "screenshot.png")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="No screenshot yet")
-    return FileResponse(path, media_type="image/png")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/save-dc/{session_id}")
@@ -366,6 +463,9 @@ def save_dc(session_id: str):
 @router.post("/launch-browser")
 def launch_browser(details: DCDetails = DCDetails()):
     tab_id = details.tab_id or str(uuid.uuid4())
+    old_screenshot = os.path.join(SCREENSHOTS_DIR, tab_id, "screenshot.png")
+    if os.path.exists(old_screenshot):
+        os.remove(old_screenshot)
     _sessions[tab_id] = _Session()
     t = threading.Thread(target=_browser_worker, args=(tab_id, details), daemon=True)
     t.start()
