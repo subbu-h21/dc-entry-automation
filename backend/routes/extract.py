@@ -68,6 +68,13 @@ def _fix_expiry(products: list[dict]) -> None:
         p['expiry'] = _normalize_expiry(p.get('expiry', ''))
 
 
+_NON_ALNUM_RE = re.compile(r'[^A-Za-z0-9]')
+
+def _fix_batch(products: list[dict]) -> None:
+    for p in products:
+        p['batch_number'] = _NON_ALNUM_RE.sub('', p.get('batch_number', ''))
+
+
 def _match_supplier(extracted: str) -> str:
     """Fuzzy-map an extracted supplier string to the nearest known supplier."""
     if not extracted:
@@ -106,6 +113,9 @@ async def extract(image: UploadFile = File(...), model: str | None = Form(None),
 
         # Step 1c — Normalize named-month expiry (e.g. "dec/27" → "12/27")
         _fix_expiry(products)
+
+        # Step 1d — Strip non-alphanumeric chars from batch numbers
+        _fix_batch(products)
 
         # Step 2 — Match each extracted name to CRM catalog
         matcher = get_matcher()
