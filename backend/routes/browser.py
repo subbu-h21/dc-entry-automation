@@ -72,6 +72,7 @@ class DCDetails(BaseModel):
     supplier: str = ""
     checked_by: str = ""
     branch: str = "HOSPET ROAD"
+    entry_mode: str = "excel"   # "excel" = bulk import, "type" = row-by-row
     products: list[ProductEntry] = []
 
 
@@ -403,8 +404,11 @@ async def _browser_coroutine(session_id: str, details: DCDetails):
         await open_sidebar(page)
         await open_dc_inward(page)
         await fill_dc_details(page, details)
-        await import_products_via_excel(page, details.products)
-        await retrigger_calculations(page, len(details.products))
+        if details.entry_mode == "type":
+            await fill_products(page, details.products)
+        else:
+            await import_products_via_excel(page, details.products)
+            await retrigger_calculations(page, len(details.products))
 
         screenshot_bytes = await page.screenshot()
         screenshot_path = os.path.join(SCREENSHOTS_DIR, session_id, "screenshot.png")

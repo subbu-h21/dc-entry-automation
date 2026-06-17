@@ -225,6 +225,7 @@ export default function App() {
   const [extractionModel, setExtractionModel] = useState('google/gemini-3.1-flash-lite');
   const [reasoning, setReasoning] = useState(false);
   const [branch, setBranch] = useState(() => sessionStorage.getItem('dc_branch') ?? 'HOSPET ROAD');
+  const [entryMode, setEntryMode] = useState<'excel' | 'type'>(() => (sessionStorage.getItem('dc_entry_mode') as 'excel' | 'type') ?? 'excel');
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -255,6 +256,7 @@ export default function App() {
   useEffect(() => { sessionStorage.setItem('dc_supplier',   supplier); },    [supplier]);
   useEffect(() => { sessionStorage.setItem('dc_checked_by', checkedBy); },   [checkedBy]);
   useEffect(() => { sessionStorage.setItem('dc_branch',     branch); },      [branch]);
+  useEffect(() => { sessionStorage.setItem('dc_entry_mode', entryMode); },  [entryMode]);
 
   // Poll inbox every 10 seconds
   useEffect(() => {
@@ -393,6 +395,7 @@ export default function App() {
           checked_by: checkedBy,
           branch,
           products: resolvedProducts,
+          entry_mode: entryMode,
         }),
       });
       await res.json();
@@ -755,6 +758,17 @@ export default function App() {
                 >
                   <option value="HOSPET ROAD">HOSPET ROAD</option>
                   <option value="SHIVAJI CHOWK">SHIVAJI CHOWK</option>
+                </select>
+              </label>
+              <label style={labelStyle}>
+                <span style={labelText}>Entry Mode</span>
+                <select
+                  style={inputStyle}
+                  value={entryMode}
+                  onChange={e => setEntryMode(e.target.value as 'excel' | 'type')}
+                >
+                  <option value="excel">Excel Import (fast)</option>
+                  <option value="type">Type row by row (slow)</option>
                 </select>
               </label>
             </div>
