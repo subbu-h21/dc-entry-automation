@@ -207,20 +207,21 @@ def _fmt(v: float) -> str:
     return str(int(v)) if v == int(v) else str(v)
 
 
-def _fmt_expiry(expiry: str) -> str:
-    """Convert any expiry format (06-26, 6/26, 06/2026) to MMYY digits only.
-    The web form already has '-' pre-typed, so we just send the 4 digits."""
+def _fmt_expiry(expiry: str, sep: str = "") -> str:
+    """Normalise expiry to MM<sep>YY.
+    sep="" for typing path (form has '-' pre-typed, needs raw 4 digits).
+    sep="/" for Excel import path."""
     if not expiry:
         return ""
     parts = re.split(r"[-/]", expiry.strip())
     if len(parts) == 2:
         month = parts[0].strip().zfill(2)
         year  = parts[1].strip()[-2:]   # last 2 digits handles both YY and YYYY
-        return month + year
+        return month + sep + year
     digits = re.sub(r"\D", "", expiry)
     if len(digits) == 3:
         digits = "0" + digits           # e.g. "927" → "0927"
-    return digits[:4]
+    return digits[:2] + sep + digits[2:4]
 
 
 async def _fill_product_name(page, row, name: str):
@@ -311,7 +312,7 @@ def _generate_excel_bytes(products: list[ProductEntry]) -> bytes:
             i + 1,
             p.matched_product or "",
             p.batch_number,
-            _fmt_expiry(p.expiry),
+            _fmt_expiry(p.expiry, sep="/"),
             p.mrp if p.mrp > 0 else "",
             p.rate if p.rate > 0 else "",
             p.quantity,
