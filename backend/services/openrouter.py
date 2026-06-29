@@ -179,14 +179,49 @@ def _reasoning_body(model: str) -> dict:
     return {"reasoning": {"effort": "high"}}
 
 
-async def extract_invoice_data(image_bytes: bytes, mime_type: str, model: str | None = None, reasoning: bool = False) -> dict:
+async def extract_invoice_data(
+    image_bytes: bytes,
+    mime_type: str,
+    model: str | None = None,
+    reasoning: bool = False,
+    product_image_bytes: bytes | None = None,
+    product_image_mime: str | None = None,
+) -> dict:
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     data_url = f"data:{mime_type};base64,{b64}"
 
     chosen_model = model or EXTRACTION_MODEL
-    log.info("Sending image to %s for extraction (reasoning=%s)", chosen_model, reasoning)
+    log.info("Sending image to %s for extraction (reasoning=%s, product_image=%s)", chosen_model, reasoning, product_image_bytes is not None)
 
     extra_body = _reasoning_body(chosen_model) if reasoning else {}
+
+    prompt_text = PROMPT
+    if product_image_bytes and product_image_mime:
+        prompt_text += (
+            "\n\n<product_image>\n"
+            "A supplementary photo of the product packaging follows the invoice image below. "
+            "Use it only to resolve product names that are unclear or ambiguous in the invoice — "
+            "it is not a source of truth for any other fields (batch, expiry, MRP, rate, quantity, etc.).\n"
+            "</product_image>"
+        )
+
+    content: list[dict] = [
+        {"type": "text", "text": prompt_text},
+        {"type": "image_url", "image_url": {"url": data_url}},
+    ]
+
+    if product_image_bytes and product_image_mime:
+        p_b64 = base64.b64encode(product_image_bytes).decode("utf-8")
+        p_data_url = f"data:{product_image_mime};base64,{p_b64}"
+        content.append({
+            "type": "text",
+            "text": (
+                "The image below is a supplementary photo of the product packaging from this delivery. "
+                "Use it ONLY to clarify a product name that is unclear or ambiguous in the invoice above. "
+                "The invoice remains the primary source of truth for all fields."
+            ),
+        })
+        content.append({"type": "image_url", "image_url": {"url": p_data_url}})
 
     response = await get_async_client().chat.completions.create(
         extra_headers={
@@ -195,15 +230,7 @@ async def extract_invoice_data(image_bytes: bytes, mime_type: str, model: str | 
         },
         extra_body=extra_body,
         model=chosen_model,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": PROMPT},
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                ],
-            }
-        ],
+        messages=[{"role": "user", "content": content}],
         tools=[EXTRACTION_TOOL],
         tool_choice={"type": "function", "function": {"name": "extract_invoice_data"}},
     )

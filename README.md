@@ -49,9 +49,16 @@ Open `backend\.env` and add your values:
 OPENROUTER_API_KEY=sk-or-v1-...
 ELEVENLABS_API_KEY=...
 PORT=3001
+PRODUCT_LIST_PATH=D:\code_files\dc\dc image recognition v3.0.1\dc-entry-automation\Product_List.xlsx
 ```
 
 > Get an OpenRouter key at https://openrouter.ai/keys
+
+Always update `PRODUCT_LIST_PATH` after setup so it points to the `Product_List.xlsx`
+file inside this project folder. The product matcher expects that workbook to have a
+sheet named `data` with columns like `PRODUCT`, `MANUFACTURER`, and `PACK`. If this
+path points to an older or different Excel file, extraction can succeed but product
+matching will fail.
 
 ### Step 5 — Launch the app
 

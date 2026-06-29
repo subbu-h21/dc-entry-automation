@@ -88,7 +88,12 @@ MAX_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 @router.post("/extract")
-async def extract(image: UploadFile = File(...), model: str | None = Form(None), reasoning: bool = Form(False)):
+async def extract(
+    image: UploadFile = File(...),
+    model: str | None = Form(None),
+    reasoning: bool = Form(False),
+    product_image: UploadFile | None = File(None),
+):
     if not image:
         raise HTTPException(status_code=400, detail="No image provided.")
 
@@ -103,9 +108,27 @@ async def extract(image: UploadFile = File(...), model: str | None = Form(None),
     if len(image_bytes) > MAX_SIZE:
         raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
 
+    product_image_bytes: bytes | None = None
+    product_image_mime: str | None = None
+    if product_image and product_image.filename:
+        if product_image.content_type not in ALLOWED_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f'Invalid product image type "{product_image.content_type}". Allowed: JPEG, PNG, WebP, GIF.',
+            )
+        product_image_bytes = await product_image.read()
+        if len(product_image_bytes) > MAX_SIZE:
+            raise HTTPException(status_code=400, detail="Product image too large. Maximum size is 10 MB.")
+        product_image_mime = product_image.content_type
+
     try:
         # Step 1 — Gemini extracts product_name / quantity / batch_number
-        result = await extract_invoice_data(image_bytes, image.content_type, model=model, reasoning=reasoning)
+        result = await extract_invoice_data(
+            image_bytes, image.content_type,
+            model=model, reasoning=reasoning,
+            product_image_bytes=product_image_bytes,
+            product_image_mime=product_image_mime,
+        )
         products = result.get("products", [])
 
         # Step 1b — Apply X+Y free-qty rule (fallback if Gemini missed it)
