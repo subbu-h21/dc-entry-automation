@@ -126,7 +126,7 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
   // ── render ─────────────────────────────────────────────────
   return (
     <>
-      <div className="upload-grid" style={{ gridTemplateColumns: previewUrl ? '1fr 1fr' : '1fr' }}>
+      <div className="upload-grid" style={{ gridTemplateColumns: (previewUrl && !isMobile()) ? '1fr 1fr' : '1fr' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
         {/* Drop zone */}
@@ -169,11 +169,15 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
           {selectedFile ? (
             <>
               <p style={{ fontWeight: 600, color: 'var(--success)', fontSize: '15px' }}>Image ready</p>
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center' }}>
+              <p style={{
+                fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                maxWidth: '100%',
+              }}>
                 {selectedFile.name}
-                <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
-                  ({(selectedFile.size / 1024).toFixed(0)} KB)
-                </span>
+              </p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {(selectedFile.size / 1024).toFixed(0)} KB
               </p>
               {!disabled && <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Click to replace</p>}
             </>
