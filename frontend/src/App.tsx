@@ -212,7 +212,6 @@ export default function App() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [productImage, setProductImage] = useState<File | null>(null);
   const [productImagePreviewUrl, setProductImagePreviewUrl] = useState<string | null>(null);
-  const productImageInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>(() => {
     try { return JSON.parse(sessionStorage.getItem('dc_products') || '[]'); } catch { return []; }
   });
@@ -306,6 +305,11 @@ export default function App() {
       if (prev) URL.revokeObjectURL(prev);
       return url;
     });
+  }, []);
+
+  const handleProductImageSelect = useCallback((selected: File) => {
+    setProductImage(selected);
+    setProductImagePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(selected); });
   }, []);
 
   const doExtract = async (imageFile: File, prodImg: File | null = productImage) => {
@@ -610,91 +614,14 @@ export default function App() {
           </SectionCard>
 
           {/* Optional product image */}
-          <div style={{
-            border: '1px dashed var(--border)',
-            borderRadius: 'var(--radius)',
-            padding: '14px 16px',
-            background: 'var(--surface-2)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ ...labelText }}>Product's Image <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span></span>
-                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Photo of the package — helps AI resolve unclear product names in the invoice
-                </span>
-              </div>
-              <button
-                onClick={() => productImageInputRef.current?.click()}
-                disabled={status === 'loading'}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 'var(--radius-sm)',
-                  border: '1px solid var(--border)',
-                  background: 'var(--surface)',
-                  color: status === 'loading' ? 'var(--text-muted)' : 'var(--text-secondary)',
-                  fontSize: '12px',
-                  fontWeight: 500,
-                  cursor: status === 'loading' ? 'not-allowed' : 'pointer',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                }}
-              >
-                {productImage ? 'Replace' : 'Browse'}
-              </button>
-              <input
-                ref={productImageInputRef}
-                type="file"
-                accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
-                style={{ display: 'none' }}
-                onChange={e => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  e.target.value = '';
-                  setProductImage(f);
-                  setProductImagePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(f); });
-                }}
-              />
-            </div>
-            {productImagePreviewUrl && (
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <img
-                  src={productImagePreviewUrl}
-                  alt="Product package"
-                  style={{
-                    width: 80, height: 60, objectFit: 'cover',
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border)',
-                    flexShrink: 0,
-                  }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {productImage?.name}
-                  </p>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: 2 }}>
-                    {productImage ? `${(productImage.size / 1024).toFixed(0)} KB` : ''}
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setProductImage(null);
-                    setProductImagePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
-                  }}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'var(--text-muted)', fontSize: '16px', lineHeight: 1,
-                    padding: '2px 4px', flexShrink: 0,
-                  }}
-                  title="Remove"
-                >
-                  ×
-                </button>
-              </div>
-            )}
-          </div>
+          <SectionCard title="Product's Image (optional)" icon={<UploadSectionIcon />}>
+            <ImageUpload
+              onFileSelect={handleProductImageSelect}
+              selectedFile={productImage}
+              previewUrl={productImagePreviewUrl}
+              disabled={status === 'loading'}
+            />
+          </SectionCard>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div className="model-selector-row" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

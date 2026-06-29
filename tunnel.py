@@ -10,11 +10,11 @@ def main():
         input("\nPress Enter to exit...")
         sys.exit(1)
 
-    print("Starting Cloudflare tunnel to http://localhost:5173 ...")
+    print("Starting Cloudflare tunnel to http://localhost:3001 ...")
     print("Waiting for tunnel URL...\n")
 
     proc = subprocess.Popen(
-        ["cloudflared", "tunnel", "--url", "http://localhost:5173"],
+        ["cloudflared", "tunnel", "--url", "http://localhost:3001"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

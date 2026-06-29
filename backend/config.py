@@ -20,7 +20,7 @@ MATCHING_MODEL: str = os.getenv("MATCHING_MODEL", "google/gemini-2.5-flash-lite"
 
 PORT: int = int(os.getenv("PORT", "3001"))
 ALLOWED_ORIGINS: list[str] = [
-    o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001").split(",")
 ]
 
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

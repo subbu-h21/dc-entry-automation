@@ -1,15 +1,17 @@
 @echo off
 echo Starting DC Entry Automation...
 
-:: Start backend in a new window
+:: Build frontend (runs synchronously — ~30s)
+echo Building frontend...
+pushd frontend
+call npm run build
+popd
+
+:: Start backend (serves API + built frontend on port 3001)
 start "Backend" cmd /k "cd backend && venv\Scripts\activate && python main.py"
 
-:: Start frontend in a new window
-start "Frontend" cmd /k "cd frontend && npm run dev"
-
-:: Wait for servers to be ready then open browser
-timeout /t 4 /nobreak >nul
-start "" "http://localhost:5173"
-
-:: Start cloudflare tunnel + QR code in a new window
+:: Start cloudflare tunnel + QR code
 start "Tunnel + QR" cmd /k "backend\venv\Scripts\activate && python tunnel.py"
+
+:: Open browser once backend is ready
+powershell -NoProfile -Command "do { Start-Sleep 1 } until ((Test-NetConnection localhost -Port 3001 -InformationLevel Quiet -WarningAction SilentlyContinue)); Start-Process 'http://localhost:3001'"

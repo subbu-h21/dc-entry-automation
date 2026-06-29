@@ -8,8 +8,11 @@ interface Props {
   disabled: boolean;
 }
 
+const isMobile = () => navigator.maxTouchPoints > 0;
+
 export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, disabled }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const nativeCameraRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -48,6 +51,10 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
 
   // ── camera helpers ─────────────────────────────────────────
   const startCamera = async () => {
+    if (isMobile()) {
+      nativeCameraRef.current?.click();
+      return;
+    }
     setCameraError('');
     setCaptured(null);
     setCameraOpen(true);
@@ -182,6 +189,16 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
             </>
           )}
         </div>
+
+        <input
+          ref={nativeCameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={onChange}
+          disabled={disabled}
+        />
 
         {/* Camera button */}
         <button
