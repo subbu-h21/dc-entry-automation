@@ -62,6 +62,10 @@ body {
   align-items: start;
 }
 
+.mobile-product-list {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .dc-details-grid {
     grid-template-columns: 1fr;
@@ -78,6 +82,14 @@ body {
 
   .model-selector-row label {
     justify-content: flex-start !important;
+  }
+
+  .desktop-table-wrap {
+    display: none !important;
+  }
+
+  .mobile-product-list {
+    display: flex !important;
   }
 }
 

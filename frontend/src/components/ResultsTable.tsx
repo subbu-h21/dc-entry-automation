@@ -421,8 +421,8 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
         </div>
       )}
 
-      {/* Table */}
-      <div style={{
+      {/* Table (desktop) */}
+      <div className="desktop-table-wrap" style={{
         background: 'var(--surface)', borderRadius: 'var(--radius)',
         border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
       }}>
@@ -642,6 +642,142 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
           </table>
         </div>
       </div>
+
+      {/* Cards (mobile) — CRM match leads, metrics stacked so nothing needs horizontal scroll */}
+      <div className="mobile-product-list" style={{ flexDirection: 'column', gap: 12 }}>
+        {products.map((p, idx) => {
+          const resolved = resolvedProduct(idx);
+          const isOpen   = expandedRow === idx;
+          const modified = overrides[idx] !== undefined;
+
+          return (
+            <Fragment key={idx}>
+              <div
+                style={{
+                  background: isOpen ? 'var(--accent-light)' : 'var(--surface)',
+                  border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)',
+                  padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10,
+                }}
+              >
+                {/* Header: # + CRM match + Change */}
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: '12px', flexShrink: 0, marginTop: 2 }}>
+                    #{idx + 1}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {hasMatching ? (
+                      <>
+                        {resolved?.product ? (
+                          <span style={{ fontWeight: 600, fontSize: '14px', color: modified ? 'var(--accent)' : 'var(--text-primary)' }}>
+                            {resolved.product}
+                            {modified && <span style={{ fontSize: '10px', marginLeft: 4, color: 'var(--accent)' }}>edited</span>}
+                          </span>
+                        ) : p.not_stocked ? (
+                          <span style={pill('var(--warning)', 'var(--warning-light)')}>Not stocked</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No match</span>
+                        )}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{resolved?.pack ?? '—'}</span>
+                          {p.match_confidence != null && p.match_confidence >= 0 && <ConfBadge value={p.match_confidence} />}
+                        </div>
+                      </>
+                    ) : (
+                      <span style={{ fontWeight: 600, fontSize: '14px' }}>{resolvedField(idx, 'product_name')}</span>
+                    )}
+                  </div>
+                  {hasMatching && (
+                    <button
+                      onClick={() => isOpen ? setExpandedRow(null) : openPicker(idx)}
+                      style={{
+                        flexShrink: 0, background: isOpen ? 'var(--accent)' : 'var(--surface)',
+                        border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
+                        borderRadius: 6, padding: '6px 12px', fontSize: '12px', fontWeight: 600,
+                        cursor: 'pointer', color: isOpen ? '#fff' : 'var(--text-secondary)',
+                      }}
+                    >
+                      {isOpen ? 'Close' : 'Change'}
+                    </button>
+                  )}
+                </div>
+
+                {/* Invoice product name */}
+                {hasMatching && (
+                  <div style={{ paddingTop: 8, borderTop: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Invoice name
+                    </span>
+                    {renderEdit(idx, 'product_name', false, 220,
+                      <span style={{ fontWeight: 500, color: fieldOverrides[idx]?.product_name ? 'var(--accent)' : 'var(--text-primary)' }}>
+                        {resolvedField(idx, 'product_name')}
+                      </span>,
+                      'left',
+                    )}
+                  </div>
+                )}
+
+                {/* Stacked metrics — batch, mrp, qty, expiry, rate, disc% */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+                  <MetricTile label="Batch">
+                    {renderEdit(idx, 'batch_number', false, 90,
+                      <span style={{ fontFamily: 'monospace' }}>{resolvedField(idx, 'batch_number')}</span>,
+                    )}
+                  </MetricTile>
+                  <MetricTile label="MRP">
+                    {renderEdit(idx, 'mrp', true, 60,
+                      <span>{resolvedField(idx, 'mrp') > 0 ? resolvedField(idx, 'mrp').toFixed(2) : '—'}</span>,
+                      'right',
+                    )}
+                  </MetricTile>
+                  <MetricTile label="Qty">
+                    {renderEdit(idx, 'quantity', true, 60,
+                      <span>{resolvedField(idx, 'quantity')}</span>,
+                    )}
+                  </MetricTile>
+                  <MetricTile label="Expiry">
+                    {renderEdit(idx, 'expiry', false, 60,
+                      <span>{resolvedField(idx, 'expiry') || '—'}</span>,
+                    )}
+                  </MetricTile>
+                  <MetricTile label="Rate">
+                    {renderEdit(idx, 'rate', true, 60,
+                      <span>{resolvedField(idx, 'rate') > 0 ? resolvedField(idx, 'rate').toFixed(2) : '—'}</span>,
+                      'right',
+                    )}
+                  </MetricTile>
+                  <MetricTile label="Disc%">
+                    {renderEdit(idx, 'disc_percent', true, 60,
+                      <span>{resolvedField(idx, 'disc_percent') > 0 ? `${resolvedField(idx, 'disc_percent')}%` : '—'}</span>,
+                    )}
+                  </MetricTile>
+                </div>
+              </div>
+
+              {isOpen && (
+                <CandidatePicker
+                  product={p}
+                  current={pending[idx] ?? null}
+                  onChange={val => setPending(prev => ({ ...prev, [idx]: val }))}
+                  onApply={() => applyPicker(idx)}
+                  onCancel={() => setExpandedRow(null)}
+                />
+              )}
+            </Fragment>
+          );
+        })}
+
+        {hasMatching && (
+          <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '10px 16px', background: 'var(--surface-2)', border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)', fontWeight: 700,
+          }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Total Value</span>
+            <span style={{ color: 'var(--text-primary)' }}>{totalValue.toFixed(2)}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -835,6 +971,21 @@ function EmptyState({ icon, bg, title, body }: { icon: React.ReactNode; bg: stri
 
 function Pill({ label, color, bg }: { label: string; color: string; bg: string }) {
   return <span style={{ background: bg, color, borderRadius: 20, padding: '3px 10px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>;
+}
+
+function MetricTile({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 2,
+      background: 'var(--surface-2)', border: '1px solid var(--border)',
+      borderRadius: 8, padding: '6px 8px', minWidth: 0,
+    }}>
+      <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {label}
+      </span>
+      <span style={{ fontSize: '13px', fontWeight: 500 }}>{children}</span>
+    </div>
+  );
 }
 
 function ConfBadge({ value }: { value: number }) {
