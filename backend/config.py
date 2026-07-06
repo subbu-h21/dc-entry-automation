@@ -23,6 +23,8 @@ ALLOWED_ORIGINS: list[str] = [
     o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3001").split(",")
 ]
 
+DC_PIPELINE_URL: str = os.getenv("DC_PIPELINE_URL", "http://localhost:3002")
+
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRODUCT_LIST_PATH: str = os.getenv("PRODUCT_LIST_PATH", os.path.join(_root, "Product_List.xlsx"))
 PRODUCT_LIST_SHEET: str = os.getenv("PRODUCT_LIST_SHEET", "data")

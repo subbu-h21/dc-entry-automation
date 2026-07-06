@@ -244,11 +244,23 @@ export default function App() {
   });
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const inboxInputRef = useRef<HTMLInputElement>(null);
+  const [pipelineSuppliers, setPipelineSuppliers] = useState<{ id: number; name: string }[]>([]);
+  const [pipelineDcNumber, setPipelineDcNumber] = useState('');
+  const [pipelineSupplierId, setPipelineSupplierId] = useState<number | null>(null);
+  const [pipelineFetching, setPipelineFetching] = useState(false);
+  const [pipelineFetchError, setPipelineFetchError] = useState('');
 
   useEffect(() => {
     fetch('/suppliers')
       .then(r => r.json())
       .then(d => setSuppliers(d.suppliers ?? []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch('/inbox/pipeline-suppliers')
+      .then(r => r.json())
+      .then(d => setPipelineSuppliers(d.suppliers ?? []))
       .catch(() => {});
   }, []);
 
@@ -362,6 +374,36 @@ export default function App() {
     } catch {}
   };
 
+  const handleFetchFromPipeline = async () => {
+    if (!pipelineDcNumber.trim() || pipelineSupplierId === null) return;
+    setPipelineFetching(true);
+    setPipelineFetchError('');
+    try {
+      const params = new URLSearchParams({
+        dc_number: pipelineDcNumber.trim(),
+        supplier_id: String(pipelineSupplierId),
+      });
+      const res = await fetch(`/inbox/import-from-pipeline?${params}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || `Error ${res.status}`);
+      }
+
+      const invRes = await fetch('/inbox');
+      if (invRes.ok) setInboxItems(await invRes.json());
+
+      if (data.imported === 0) {
+        setPipelineFetchError('No matching photos found for that DC (or they have expired).');
+      } else {
+        setPipelineDcNumber('');
+      }
+    } catch (err) {
+      setPipelineFetchError(err instanceof Error ? err.message : 'Fetch failed');
+    } finally {
+      setPipelineFetching(false);
+    }
+  };
+
   const handleInboxClick = async (item: InboxItem) => {
     try {
       const res = await fetch(`/inbox/image/${item.id}`);
@@ -432,6 +474,7 @@ export default function App() {
   }, [launchStatus, tabId]);
 
   const canExtract = file !== null && status !== 'loading';
+  const pipelineInputsValid = !!pipelineDcNumber.trim() && pipelineSupplierId !== null;
 
   if (window.location.pathname === '/inbox-upload') {
     return <InboxUploadPage />;
@@ -600,6 +643,61 @@ export default function App() {
               </svg>
               Add Image
             </button>
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px solid var(--border)',
+            }}
+          >
+            <input
+              type="text"
+              placeholder="DC Number"
+              value={pipelineDcNumber}
+              onChange={e => setPipelineDcNumber(e.target.value)}
+              style={{ ...inputStyle, width: 130 }}
+            />
+            <select
+              value={pipelineSupplierId ?? ''}
+              onChange={e => setPipelineSupplierId(e.target.value ? Number(e.target.value) : null)}
+              style={{ ...inputStyle, width: 220 }}
+            >
+              <option value="">— Select supplier —</option>
+              {pipelineSuppliers.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleFetchFromPipeline}
+              disabled={!pipelineInputsValid || pipelineFetching}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 14px',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: pipelineInputsValid ? 'var(--accent)' : 'var(--border)',
+                color: pipelineInputsValid ? '#fff' : 'var(--text-muted)',
+                fontSize: '13px',
+                fontWeight: 500,
+                cursor: !pipelineInputsValid || pipelineFetching ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {pipelineFetching && <Spinner />}
+              {pipelineFetching ? 'Fetching…' : 'Fetch from Pipeline'}
+            </button>
+            {pipelineFetchError && (
+              <span style={{ fontSize: '12px', color: 'var(--error)' }}>{pipelineFetchError}</span>
+            )}
           </div>
         </SectionCard>
 
