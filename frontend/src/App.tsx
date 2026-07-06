@@ -32,11 +32,12 @@ const EXTRACTION_MODELS = [
   { value: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', supportsReasoning: false },
   { value: 'google/gemini-3.1-flash',      label: 'Gemini 3.1 Flash',      supportsReasoning: true },
   { value: 'google/gemini-3.1-pro',        label: 'Gemini 3.1 Pro',        supportsReasoning: true },
-  { value: 'google/gemini-3.5-flash',      label: 'Gemini 3.5 Flash',      supportsReasoning: true },
+  { value: 'google/gemini-2.5-flash-lite',      label: 'Gemini 2.5 Flash Lite',      supportsReasoning: true },
   { value: 'google/gemini-3.5-pro',        label: 'Gemini 3.5 Pro',        supportsReasoning: true },
   { value: 'openai/gpt-4.1-mini',          label: 'GPT-4.1 Mini',          supportsReasoning: false },
   { value: 'google/gemma-4-31b-it',        label: 'Gemma 4 31b It',        supportsReasoning: false },
   { value: 'nex-agi/nex-n2-pro:free',     label: 'Nex N2 Pro (free)',     supportsReasoning: true },
+  {value: 'openai/gpt-5.4', label: 'GPT-5.4', supportsReasoning: true}
 ];
 
 
