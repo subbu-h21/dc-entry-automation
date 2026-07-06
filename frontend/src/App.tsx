@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, ChangeEvent } from 'react';
+import { createPortal } from 'react-dom';
 import ImageUpload from './components/ImageUpload';
 import ResultsTable, { Product, ResolvedProduct } from './components/ResultsTable';
 import {
@@ -569,7 +570,60 @@ export default function App() {
           badge={inboxItems.length > 0 ? inboxItems.length : undefined}
           pulse={inboxItems.length > 0}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="DC Number"
+              value={pipelineDcNumber}
+              onChange={e => setPipelineDcNumber(e.target.value)}
+              style={{ ...inputStyle, width: 130 }}
+            />
+            <SupplierAutocomplete
+              options={pipelineSuppliers.map(s => ({ id: String(s.id), label: s.name }))}
+              value={pipelineSuppliers.find(s => s.id === pipelineSupplierId)?.name ?? ''}
+              onSelect={id => setPipelineSupplierId(Number(id))}
+              placeholder="Search supplier…"
+              style={{ width: 220 }}
+            />
+            <button
+              onClick={handleFetchFromPipeline}
+              disabled={!pipelineInputsValid || pipelineFetching}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '7px 14px',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: pipelineInputsValid ? 'var(--accent)' : 'var(--border)',
+                color: pipelineInputsValid ? '#fff' : 'var(--text-muted)',
+                fontSize: '13px',
+                fontWeight: 500,
+                cursor: !pipelineInputsValid || pipelineFetching ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {pipelineFetching && <Spinner />}
+              {pipelineFetching ? 'Fetching…' : 'Fetch from Pipeline'}
+            </button>
+            {pipelineFetchError && (
+              <span style={{ fontSize: '12px', color: 'var(--error)' }}>{pipelineFetchError}</span>
+            )}
+          </div>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 16,
+              flexWrap: 'wrap',
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: '1px solid var(--border)',
+            }}
+          >
             {inboxItems.length === 0 ? (
               <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No images in inbox</p>
             ) : (
@@ -643,61 +697,6 @@ export default function App() {
               </svg>
               Add Image
             </button>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              marginTop: 12,
-              paddingTop: 12,
-              borderTop: '1px solid var(--border)',
-            }}
-          >
-            <input
-              type="text"
-              placeholder="DC Number"
-              value={pipelineDcNumber}
-              onChange={e => setPipelineDcNumber(e.target.value)}
-              style={{ ...inputStyle, width: 130 }}
-            />
-            <select
-              value={pipelineSupplierId ?? ''}
-              onChange={e => setPipelineSupplierId(e.target.value ? Number(e.target.value) : null)}
-              style={{ ...inputStyle, width: 220 }}
-            >
-              <option value="">— Select supplier —</option>
-              {pipelineSuppliers.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            <button
-              onClick={handleFetchFromPipeline}
-              disabled={!pipelineInputsValid || pipelineFetching}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '7px 14px',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
-                background: pipelineInputsValid ? 'var(--accent)' : 'var(--border)',
-                color: pipelineInputsValid ? '#fff' : 'var(--text-muted)',
-                fontSize: '13px',
-                fontWeight: 500,
-                cursor: !pipelineInputsValid || pipelineFetching ? 'not-allowed' : 'pointer',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              {pipelineFetching && <Spinner />}
-              {pipelineFetching ? 'Fetching…' : 'Fetch from Pipeline'}
-            </button>
-            {pipelineFetchError && (
-              <span style={{ fontSize: '12px', color: 'var(--error)' }}>{pipelineFetchError}</span>
-            )}
           </div>
         </SectionCard>
 
@@ -844,16 +843,12 @@ export default function App() {
               </label>
               <label style={labelStyle}>
                 <span style={labelText}>Supplier</span>
-                <select
-                  style={inputStyle}
+                <SupplierAutocomplete
+                  options={suppliers.map(s => ({ id: s, label: s }))}
                   value={supplier}
-                  onChange={e => setSupplier(e.target.value)}
-                >
-                  <option value="">— Select supplier —</option>
-                  {suppliers.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                  onSelect={(_, label) => setSupplier(label)}
+                  placeholder="Type to search supplier…"
+                />
               </label>
               <label style={labelStyle}>
                 <span style={labelText}>Checked By</span>
@@ -1073,6 +1068,174 @@ function LoadingState() {
           Gemini is reading the image
         </p>
       </div>
+    </div>
+  );
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+/** rapidfuzz-style partial ratio (0-100): best-matching window of `label` against `query`,
+ * with a bonus for an exact substring hit. Mirrors the >=55 threshold the backend already
+ * uses for supplier fuzzy-matching (see `_match_supplier` in routes/extract.py).
+ * Windows within +/-2 chars of the query length so a single typo'd insertion/deletion
+ * (not just substitution) still lines up against the right slice of the label. */
+function fuzzyScore(query: string, label: string): number {
+  if (!query) return 0;
+  const idx = label.indexOf(query);
+  if (idx !== -1) return 100 - idx * 0.1;
+
+  const qLen = query.length;
+  if (label.length <= qLen + 2) {
+    const dist = levenshtein(query, label);
+    return 100 * (1 - dist / Math.max(qLen, label.length));
+  }
+
+  let best = 0;
+  const minLen = Math.max(1, qLen - 2);
+  const maxLen = qLen + 2;
+  for (let winLen = minLen; winLen <= maxLen; winLen++) {
+    for (let i = 0; i <= label.length - winLen; i++) {
+      const dist = levenshtein(query, label.slice(i, i + winLen));
+      const ratio = 100 * (1 - dist / Math.max(qLen, winLen));
+      if (ratio > best) best = ratio;
+    }
+  }
+  return best;
+}
+
+interface AutocompleteOption {
+  id: string;
+  label: string;
+}
+
+function SupplierAutocomplete({
+  options,
+  value,
+  onSelect,
+  placeholder,
+  style,
+}: {
+  options: AutocompleteOption[];
+  value: string;
+  onSelect: (id: string, label: string) => void;
+  placeholder?: string;
+  style?: React.CSSProperties;
+}) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setQuery(value); }, [value]);
+
+  const updateRect = () => {
+    const r = inputRef.current?.getBoundingClientRect();
+    if (r) setRect({ top: r.bottom, left: r.left, width: r.width });
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    updateRect();
+    window.addEventListener('scroll', updateRect, true);
+    window.addEventListener('resize', updateRect);
+    return () => {
+      window.removeEventListener('scroll', updateRect, true);
+      window.removeEventListener('resize', updateRect);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    const onClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (containerRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  const matches = (() => {
+    const q = query.trim().toUpperCase();
+    if (!q) return options.slice(0, 8);
+    return options
+      .map(o => ({ o, score: fuzzyScore(q, o.label.toUpperCase()) }))
+      .filter(m => m.score >= 55)
+      .sort((a, b) => b.score - a.score || a.o.label.length - b.o.label.length)
+      .slice(0, 8)
+      .map(m => m.o);
+  })();
+
+  const select = (o: AutocompleteOption) => {
+    onSelect(o.id, o.label);
+    setQuery(o.label);
+    setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', ...style }}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        placeholder={placeholder ?? 'Type to search…'}
+        onChange={e => { setQuery(e.target.value); setOpen(true); setHighlightIdx(0); }}
+        onFocus={() => { setOpen(true); updateRect(); }}
+        onBlur={() => { setOpen(false); if (query !== value) setQuery(value); }}
+        onKeyDown={e => {
+          if (!open || matches.length === 0) return;
+          if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightIdx(i => Math.min(i + 1, matches.length - 1)); }
+          if (e.key === 'ArrowUp')   { e.preventDefault(); setHighlightIdx(i => Math.max(i - 1, 0)); }
+          if (e.key === 'Enter')     { e.preventDefault(); select(matches[highlightIdx]); }
+          if (e.key === 'Escape')    { setOpen(false); }
+        }}
+        style={inputStyle}
+      />
+      {open && matches.length > 0 && rect && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{
+            position: 'fixed', top: rect.top + 4, left: rect.left, width: rect.width, zIndex: 1000,
+            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+            boxShadow: 'var(--shadow-md)', maxHeight: 220, overflowY: 'auto',
+          }}
+        >
+          {matches.map((o, i) => (
+            <div
+              key={o.id}
+              onMouseDown={() => select(o)}
+              onMouseEnter={() => setHighlightIdx(i)}
+              style={{
+                padding: '8px 12px', fontSize: '13px', cursor: 'pointer',
+                background: i === highlightIdx ? 'var(--accent-light)' : 'transparent',
+                color: 'var(--text-primary)',
+              }}
+            >
+              {o.label}
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
