@@ -93,6 +93,21 @@ body {
   }
 }
 
+/* Manual view-mode override (higher specificity wins over the media query above,
+   regardless of viewport width — lets the user force table/cards either way). */
+.desktop-table-wrap.force-visible {
+  display: block !important;
+}
+
+.mobile-product-list.force-visible {
+  display: flex !important;
+}
+
+.desktop-table-wrap.force-hidden,
+.mobile-product-list.force-hidden {
+  display: none !important;
+}
+
 @keyframes inbox-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.75); }

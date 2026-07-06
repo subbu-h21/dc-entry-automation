@@ -78,7 +78,16 @@ interface Props {
   onDCUpdate: (field: string, value: string) => void;
 }
 
+type ViewMode = 'auto' | 'table' | 'cards';
+
 export default function ResultsTable({ products, onOpenDCEntry, launchStatus, onDCUpdate }: Props) {
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try { return (localStorage.getItem('dc_view_mode') as ViewMode) || 'table'; } catch { return 'table'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('dc_view_mode', viewMode); } catch { /* ignore */ }
+  }, [viewMode]);
+
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [pending, setPending]         = useState<Record<number, Override | null>>({});
   const [overrides, setOverrides]     = useState<Record<number, Override | null>>({});
@@ -292,6 +301,22 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
         {hasMatching && <Pill label={`${matchedCount} matched`}  color="var(--success)" bg="var(--success-light)" />}
         {notStockedCount > 0 && <Pill label={`${notStockedCount} not stocked`} color="var(--warning)" bg="var(--warning-light)" />}
         <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          {(['auto', 'table', 'cards'] as const).map(m => (
+            <button
+              key={m}
+              onClick={() => setViewMode(m)}
+              title={m === 'auto' ? 'Table on desktop, cards on mobile' : m === 'table' ? 'Always show the table' : 'Always show cards'}
+              style={{
+                padding: '6px 12px', fontSize: '12px', fontWeight: 600, border: 'none', cursor: 'pointer',
+                background: viewMode === m ? 'var(--accent)' : 'var(--surface)',
+                color: viewMode === m ? '#fff' : 'var(--text-secondary)',
+              }}
+            >
+              {m === 'auto' ? 'Auto' : m === 'table' ? 'Table' : 'Cards'}
+            </button>
+          ))}
+        </div>
         <button onClick={downloadExcel} style={secondaryBtn(false)}>
           <CopyIcon color="var(--text-secondary)" />
           Download Excel
@@ -422,7 +447,9 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
       )}
 
       {/* Table (desktop) */}
-      <div className="desktop-table-wrap" style={{
+      <div
+        className={`desktop-table-wrap${viewMode === 'table' ? ' force-visible' : viewMode === 'cards' ? ' force-hidden' : ''}`}
+        style={{
         background: 'var(--surface)', borderRadius: 'var(--radius)',
         border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden',
       }}>
@@ -431,10 +458,15 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
             <thead>
               <tr style={{ background: 'var(--surface-2)' }}>
                 <th style={th}>#</th>
-                <th style={{ ...th, textAlign: 'left', minWidth: 200 }}>Product Name (Invoice)</th>
                 {hasMatching && (
                   <>
                     <th style={{ ...th, textAlign: 'left', minWidth: 240 }}>Matched CRM Product</th>
+                    <th style={{ ...th, minWidth: 70 }}></th>
+                  </>
+                )}
+                <th style={{ ...th, textAlign: 'left', minWidth: 200 }}>Product Name (Invoice)</th>
+                {hasMatching && (
+                  <>
                     <th style={{ ...th, minWidth: 80 }}>Pack</th>
                     <th style={{ ...th, minWidth: 85 }}>Confidence</th>
                   </>
@@ -466,7 +498,43 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                     >
                       <td style={{ ...td, textAlign: 'center', color: 'var(--text-muted)', fontWeight: 500 }}>{idx + 1}</td>
 
-                      {/* Product Name */}
+                      {hasMatching && (
+                        <>
+                          {/* Matched CRM Product */}
+                          <td style={td}>
+                            {resolved?.product ? (
+                              <span style={{ fontWeight: 500, color: modified ? 'var(--accent)' : 'var(--text-primary)' }}>
+                                {resolved.product}
+                                {modified && <span style={{ fontSize: '10px', marginLeft: 4, color: 'var(--accent)' }}>edited</span>}
+                              </span>
+                            ) : p.not_stocked ? (
+                              <span style={pill('var(--warning)', 'var(--warning-light)')}>Not stocked</span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No match</span>
+                            )}
+                          </td>
+
+                          {/* Change button — between Matched CRM Product and Product Name */}
+                          <td style={{ ...td, textAlign: 'center' }}>
+                            <button
+                              onClick={() => isOpen ? setExpandedRow(null) : openPicker(idx)}
+                              style={{
+                                flexShrink: 0,
+                                background: isOpen ? 'var(--accent)' : 'var(--surface)',
+                                border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
+                                borderRadius: 6, padding: '3px 9px', fontSize: '11px',
+                                fontWeight: 600, cursor: 'pointer',
+                                color: isOpen ? '#fff' : 'var(--text-secondary)',
+                                transition: 'all 0.15s',
+                              }}
+                            >
+                              {isOpen ? 'Close' : 'Change'}
+                            </button>
+                          </td>
+                        </>
+                      )}
+
+                      {/* Product Name (Invoice) */}
                       <td style={{ ...td, fontWeight: 500, color: 'var(--text-primary)' }}>
                         {renderEdit(idx, 'product_name', false, 180,
                           <span style={{ fontWeight: 500, color: fieldOverrides[idx]?.product_name ? 'var(--accent)' : 'var(--text-primary)' }}>
@@ -478,37 +546,6 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
 
                       {hasMatching && (
                         <>
-                          <td style={td}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              {resolved?.product ? (
-                                <span style={{ fontWeight: 500, color: modified ? 'var(--accent)' : 'var(--text-primary)' }}>
-                                  {resolved.product}
-                                  {modified && <span style={{ fontSize: '10px', marginLeft: 4, color: 'var(--accent)' }}>edited</span>}
-                                </span>
-                              ) : p.not_stocked ? (
-                                <span style={pill('var(--warning)', 'var(--warning-light)')}>Not stocked</span>
-                              ) : (
-                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>No match</span>
-                              )}
-                              {hasMatching && (
-                                <button
-                                  onClick={() => isOpen ? setExpandedRow(null) : openPicker(idx)}
-                                  style={{
-                                    marginLeft: 'auto', flexShrink: 0,
-                                    background: isOpen ? 'var(--accent)' : 'var(--surface)',
-                                    border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
-                                    borderRadius: 6, padding: '3px 9px', fontSize: '11px',
-                                    fontWeight: 600, cursor: 'pointer',
-                                    color: isOpen ? '#fff' : 'var(--text-secondary)',
-                                    transition: 'all 0.15s',
-                                  }}
-                                >
-                                  {isOpen ? 'Close' : 'Change'}
-                                </button>
-                              )}
-                            </div>
-                          </td>
-
                           <td style={{ ...td, textAlign: 'center' }}>
                             <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                               {resolved?.pack ?? '—'}
@@ -612,7 +649,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                     {/* ── Inline candidate picker ── */}
                     {isOpen && (
                       <tr>
-                        <td colSpan={hasMatching ? 14 : 10} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
+                        <td colSpan={hasMatching ? 15 : 10} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
                           <CandidatePicker
                             product={p}
                             current={pending[idx] ?? null}
@@ -630,7 +667,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
             {hasMatching && (
               <tfoot>
                 <tr style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border)' }}>
-                  <td colSpan={13} style={{ ...td, textAlign: 'right', fontWeight: 600, fontSize: '12px', color: 'var(--text-secondary)', borderBottom: 'none' }}>
+                  <td colSpan={14} style={{ ...td, textAlign: 'right', fontWeight: 600, fontSize: '12px', color: 'var(--text-secondary)', borderBottom: 'none' }}>
                     Total Value
                   </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)', borderBottom: 'none' }}>
@@ -644,7 +681,10 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
       </div>
 
       {/* Cards (mobile) — CRM match leads, metrics stacked so nothing needs horizontal scroll */}
-      <div className="mobile-product-list" style={{ flexDirection: 'column', gap: 12 }}>
+      <div
+        className={`mobile-product-list${viewMode === 'cards' ? ' force-visible' : viewMode === 'table' ? ' force-hidden' : ''}`}
+        style={{ flexDirection: 'column', gap: 12 }}
+      >
         {products.map((p, idx) => {
           const resolved = resolvedProduct(idx);
           const isOpen   = expandedRow === idx;
@@ -709,7 +749,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                       Invoice name
                     </span>
                     {renderEdit(idx, 'product_name', false, 220,
-                      <span style={{ fontWeight: 500, color: fieldOverrides[idx]?.product_name ? 'var(--accent)' : 'var(--text-primary)' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 400, color: fieldOverrides[idx]?.product_name ? 'var(--accent)' : 'var(--text-secondary)' }}>
                         {resolvedField(idx, 'product_name')}
                       </span>,
                       'left',
@@ -717,39 +757,59 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                   </div>
                 )}
 
-                {/* Stacked metrics — batch, mrp, qty, expiry, rate, disc% */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+                {/* Batch — full width, its own row */}
+                <div style={{ paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
                   <MetricTile label="Batch">
-                    {renderEdit(idx, 'batch_number', false, 90,
+                    {renderEdit(idx, 'batch_number', false, 220,
                       <span style={{ fontFamily: 'monospace' }}>{resolvedField(idx, 'batch_number')}</span>,
+                      'left',
                     )}
                   </MetricTile>
-                  <MetricTile label="MRP">
+                </div>
+
+                {/* Remaining metrics — mrp, qty, expiry, rate, disc%, free, old mrp, value.
+                    One scrollable row, same as the old table's horizontal scroll. */}
+                <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
+                  <MetricTile label="MRP" style={{ flexShrink: 0, minWidth: 70 }}>
                     {renderEdit(idx, 'mrp', true, 60,
                       <span>{resolvedField(idx, 'mrp') > 0 ? resolvedField(idx, 'mrp').toFixed(2) : '—'}</span>,
                       'right',
                     )}
                   </MetricTile>
-                  <MetricTile label="Qty">
+                  <MetricTile label="Qty" style={{ flexShrink: 0, minWidth: 70 }}>
                     {renderEdit(idx, 'quantity', true, 60,
                       <span>{resolvedField(idx, 'quantity')}</span>,
                     )}
                   </MetricTile>
-                  <MetricTile label="Expiry">
+                  <MetricTile label="Expiry" style={{ flexShrink: 0, minWidth: 70 }}>
                     {renderEdit(idx, 'expiry', false, 60,
                       <span>{resolvedField(idx, 'expiry') || '—'}</span>,
                     )}
                   </MetricTile>
-                  <MetricTile label="Rate">
+                  <MetricTile label="Rate" style={{ flexShrink: 0, minWidth: 70 }}>
                     {renderEdit(idx, 'rate', true, 60,
                       <span>{resolvedField(idx, 'rate') > 0 ? resolvedField(idx, 'rate').toFixed(2) : '—'}</span>,
                       'right',
                     )}
                   </MetricTile>
-                  <MetricTile label="Disc%">
+                  <MetricTile label="Disc%" style={{ flexShrink: 0, minWidth: 65 }}>
                     {renderEdit(idx, 'disc_percent', true, 60,
                       <span>{resolvedField(idx, 'disc_percent') > 0 ? `${resolvedField(idx, 'disc_percent')}%` : '—'}</span>,
                     )}
+                  </MetricTile>
+                  <MetricTile label="Free" style={{ flexShrink: 0, minWidth: 65 }}>
+                    {renderEdit(idx, 'free', true, 60,
+                      <span>{resolvedField(idx, 'free') > 0 ? resolvedField(idx, 'free') : '—'}</span>,
+                    )}
+                  </MetricTile>
+                  <MetricTile label="Old MRP" style={{ flexShrink: 0, minWidth: 75 }}>
+                    {renderEdit(idx, 'old_mrp', true, 60,
+                      <span>{resolvedField(idx, 'old_mrp') > 0 ? resolvedField(idx, 'old_mrp').toFixed(2) : '—'}</span>,
+                      'right',
+                    )}
+                  </MetricTile>
+                  <MetricTile label="Value" style={{ flexShrink: 0, minWidth: 75 }}>
+                    <span>{(resolvedField(idx, 'rate') * resolvedField(idx, 'quantity')).toFixed(2)}</span>
                   </MetricTile>
                 </div>
               </div>
@@ -973,12 +1033,13 @@ function Pill({ label, color, bg }: { label: string; color: string; bg: string }
   return <span style={{ background: bg, color, borderRadius: 20, padding: '3px 10px', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>;
 }
 
-function MetricTile({ label, children }: { label: string; children: React.ReactNode }) {
+function MetricTile({ label, children, style }: { label: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', gap: 2,
       background: 'var(--surface-2)', border: '1px solid var(--border)',
       borderRadius: 8, padding: '6px 8px', minWidth: 0,
+      ...style,
     }}>
       <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
         {label}
