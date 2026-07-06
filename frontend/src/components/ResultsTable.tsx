@@ -88,6 +88,15 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
     try { localStorage.setItem('dc_view_mode', viewMode); } catch { /* ignore */ }
   }, [viewMode]);
 
+  const [highlightedRows, setHighlightedRows] = useState<Set<number>>(() => new Set());
+  const toggleHighlight = (idx: number) => {
+    setHighlightedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [pending, setPending]         = useState<Record<number, Override | null>>({});
   const [overrides, setOverrides]     = useState<Record<number, Override | null>>({});
@@ -466,10 +475,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                 )}
                 <th style={{ ...th, textAlign: 'left', minWidth: 200 }}>Product Name (Invoice)</th>
                 {hasMatching && (
-                  <>
-                    <th style={{ ...th, minWidth: 80 }}>Pack</th>
-                    <th style={{ ...th, minWidth: 85 }}>Confidence</th>
-                  </>
+                  <th style={{ ...th, minWidth: 80 }}>Pack</th>
                 )}
                 <th style={{ ...th, minWidth: 60 }}>Free</th>
                 <th style={{ ...th, minWidth: 70 }}>Qty</th>
@@ -492,7 +498,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                   <Fragment key={idx}>
                     <tr
                       style={{
-                        background: isOpen ? 'var(--accent-light)' : idx % 2 === 0 ? 'var(--surface)' : 'var(--surface-2)',
+                        background: highlightedRows.has(idx) ? '#dcfce7' : isOpen ? 'var(--accent-light)' : idx % 2 === 0 ? 'var(--surface)' : 'var(--surface-2)',
                         transition: 'background 0.15s',
                       }}
                     >
@@ -500,8 +506,8 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
 
                       {hasMatching && (
                         <>
-                          {/* Matched CRM Product */}
-                          <td style={td}>
+                          {/* Matched CRM Product — click to highlight the row */}
+                          <td style={{ ...td, cursor: 'pointer' }} onClick={() => toggleHighlight(idx)} title="Click to highlight this row">
                             {resolved?.product ? (
                               <span style={{ fontWeight: 500, color: modified ? 'var(--accent)' : 'var(--text-primary)' }}>
                                 {resolved.product}
@@ -545,21 +551,11 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                       </td>
 
                       {hasMatching && (
-                        <>
-                          <td style={{ ...td, textAlign: 'center' }}>
-                            <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                              {resolved?.pack ?? '—'}
-                            </span>
-                          </td>
-
-                          <td style={{ ...td, textAlign: 'center' }}>
-                            {p.match_confidence != null && p.match_confidence >= 0 ? (
-                              <ConfBadge value={p.match_confidence} />
-                            ) : (
-                              <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>—</span>
-                            )}
-                          </td>
-                        </>
+                        <td style={{ ...td, textAlign: 'center' }}>
+                          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                            {resolved?.pack ?? '—'}
+                          </span>
+                        </td>
                       )}
 
                       {/* Free */}
@@ -649,7 +645,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                     {/* ── Inline candidate picker ── */}
                     {isOpen && (
                       <tr>
-                        <td colSpan={hasMatching ? 15 : 10} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
+                        <td colSpan={hasMatching ? 14 : 10} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
                           <CandidatePicker
                             product={p}
                             current={pending[idx] ?? null}
@@ -667,7 +663,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
             {hasMatching && (
               <tfoot>
                 <tr style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border)' }}>
-                  <td colSpan={14} style={{ ...td, textAlign: 'right', fontWeight: 600, fontSize: '12px', color: 'var(--text-secondary)', borderBottom: 'none' }}>
+                  <td colSpan={13} style={{ ...td, textAlign: 'right', fontWeight: 600, fontSize: '12px', color: 'var(--text-secondary)', borderBottom: 'none' }}>
                     Total Value
                   </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)', borderBottom: 'none' }}>
@@ -694,7 +690,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
             <Fragment key={idx}>
               <div
                 style={{
-                  background: isOpen ? 'var(--accent-light)' : 'var(--surface)',
+                  background: highlightedRows.has(idx) ? '#dcfce7' : isOpen ? 'var(--accent-light)' : 'var(--surface)',
                   border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
                   borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)',
                   padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10,
@@ -705,7 +701,11 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                   <span style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: '12px', flexShrink: 0, marginTop: 2 }}>
                     #{idx + 1}
                   </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{ flex: 1, minWidth: 0, cursor: hasMatching ? 'pointer' : 'default' }}
+                    onClick={() => hasMatching && toggleHighlight(idx)}
+                    title={hasMatching ? 'Click to highlight this card' : undefined}
+                  >
                     {hasMatching ? (
                       <>
                         {resolved?.product ? (
