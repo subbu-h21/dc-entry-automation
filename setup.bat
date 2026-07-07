@@ -31,6 +31,7 @@ if not exist .env (
     echo  - OPENROUTER_API_KEY
     echo  - ELEVENLABS_API_KEY
     echo  - PRODUCT_LIST_PATH  (path to your Product_List.xlsx)
+    echo  - DC_PIPELINE_URL    (only if dc_pipeline runs somewhere other than http://localhost:3002)
     echo.
 ) else (
     echo backend\.env already exists, skipping.
