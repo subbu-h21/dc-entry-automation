@@ -2,15 +2,25 @@ import { useRef, useState, useCallback, useEffect, DragEvent, ChangeEvent } from
 import { UploadIcon, CheckIcon, ImageIcon, CameraIcon } from './icons';
 
 interface Props {
-  onFileSelect: (file: File) => void;
-  selectedFile: File | null;
-  previewUrl: string | null;
+  onFilesChange: (files: File[]) => void;
+  selectedFiles: File[];
+  previewUrls: string[];
   disabled: boolean;
+  maxFiles?: number;
+  onRemove: (index: number) => void;
 }
 
+const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
 const isMobile = () => navigator.maxTouchPoints > 0;
 
-export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, disabled }: Props) {
+export default function ImageUpload({
+  onFilesChange,
+  selectedFiles,
+  previewUrls,
+  disabled,
+  maxFiles = 1,
+  onRemove,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const nativeCameraRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -21,22 +31,34 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
   const [cameraError, setCameraError] = useState('');
   const [captured, setCaptured] = useState<string | null>(null);
 
-  const handleFile = useCallback(
-    (file: File) => {
-      const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-      if (!allowed.includes(file.type)) return;
-      onFileSelect(file);
+  const atCap = selectedFiles.length >= maxFiles;
+  const showDropzone = maxFiles === 1 || !atCap;
+  const showPreviews = previewUrls.length > 0;
+  const twoColumns = showDropzone && showPreviews && !isMobile();
+
+  // All three input paths (drag-drop, file-picker, camera) funnel through here
+  // so multiple files added at once are combined in a single state update —
+  // calling the single-file handler once per file would each read the same
+  // stale `selectedFiles` and clobber each other.
+  const addFiles = useCallback(
+    (newFiles: File[]) => {
+      const valid = newFiles.filter(f => ALLOWED_TYPES.includes(f.type));
+      if (valid.length === 0) return;
+      if (maxFiles === 1) {
+        onFilesChange([valid[0]]);
+      } else {
+        onFilesChange([...selectedFiles, ...valid].slice(0, maxFiles));
+      }
     },
-    [onFileSelect]
+    [onFilesChange, selectedFiles, maxFiles]
   );
 
   // ── drag-and-drop ──────────────────────────────────────────
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragging(false);
-    if (disabled) return;
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    if (disabled || (maxFiles > 1 && atCap)) return;
+    addFiles(Array.from(e.dataTransfer.files));
   };
   const onDragOver = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -44,8 +66,7 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
   };
   const onDragLeave = () => setDragging(false);
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    addFiles(Array.from(e.target.files ?? []));
     e.target.value = '';
   };
 
@@ -119,14 +140,17 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
     const arr = new Uint8Array(byteStr.length);
     for (let i = 0; i < byteStr.length; i++) arr[i] = byteStr.charCodeAt(i);
     const file = new File([arr], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
-    onFileSelect(file);
+    addFiles([file]);
     stopCamera();
   };
+
+  const singleFile = maxFiles === 1 ? selectedFiles[0] ?? null : null;
 
   // ── render ─────────────────────────────────────────────────
   return (
     <>
-      <div className="upload-grid" style={{ gridTemplateColumns: (previewUrl && !isMobile()) ? '1fr 1fr' : '1fr' }}>
+      <div className="upload-grid" style={{ gridTemplateColumns: twoColumns ? '1fr 1fr' : '1fr' }}>
+        {showDropzone && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
         {/* Drop zone */}
@@ -136,7 +160,7 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
           onDragOver={onDragOver}
           onDragLeave={onDragLeave}
           style={{
-            border: `2px dashed ${dragging ? 'var(--accent)' : selectedFile ? 'var(--success)' : 'var(--border)'}`,
+            border: `2px dashed ${dragging ? 'var(--accent)' : singleFile ? 'var(--success)' : 'var(--border)'}`,
             borderRadius: 'var(--radius)',
             padding: '32px 24px',
             display: 'flex',
@@ -144,7 +168,7 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
             alignItems: 'center',
             gap: '10px',
             cursor: disabled ? 'not-allowed' : 'pointer',
-            background: dragging ? 'var(--accent-light)' : selectedFile ? 'var(--success-light)' : 'var(--surface-2)',
+            background: dragging ? 'var(--accent-light)' : singleFile ? 'var(--success-light)' : 'var(--surface-2)',
             transition: 'all 0.2s ease',
             opacity: disabled ? 0.6 : 1,
           }}
@@ -153,6 +177,7 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
             ref={inputRef}
             type="file"
             accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+            multiple={maxFiles > 1}
             style={{ display: 'none' }}
             onChange={onChange}
             disabled={disabled}
@@ -160,13 +185,13 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
 
           <div style={{
             width: 52, height: 52, borderRadius: '50%',
-            background: selectedFile ? 'var(--success-light)' : 'var(--accent-light)',
+            background: singleFile ? 'var(--success-light)' : 'var(--accent-light)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            {selectedFile ? <CheckIcon color="var(--success)" /> : <UploadIcon color="var(--accent)" />}
+            {singleFile ? <CheckIcon color="var(--success)" /> : <UploadIcon color="var(--accent)" />}
           </div>
 
-          {selectedFile ? (
+          {maxFiles === 1 && singleFile ? (
             <>
               <p style={{ fontWeight: 600, color: 'var(--success)', fontSize: '15px' }}>Image ready</p>
               <p style={{
@@ -174,12 +199,24 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 maxWidth: '100%',
               }}>
-                {selectedFile.name}
+                {singleFile.name}
               </p>
               <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                {(selectedFile.size / 1024).toFixed(0)} KB
+                {(singleFile.size / 1024).toFixed(0)} KB
               </p>
               {!disabled && <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Click to replace</p>}
+            </>
+          ) : maxFiles > 1 && selectedFiles.length > 0 ? (
+            <>
+              <p style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '15px' }}>
+                Drop another page here
+              </p>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)', textAlign: 'center' }}>
+                or <span style={{ color: 'var(--accent)', fontWeight: 500 }}>browse files</span>
+              </p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                {selectedFiles.length} of {maxFiles} pages added
+              </p>
             </>
           ) : (
             <>
@@ -227,25 +264,67 @@ export default function ImageUpload({ onFileSelect, selectedFile, previewUrl, di
         </button>
 
         </div>
+        )}
 
-        {/* Image preview — right column */}
-        {previewUrl && (
-          <div style={{
-            borderRadius: 'var(--radius)', overflow: 'hidden',
-            border: '1px solid var(--border)', background: 'var(--surface)', boxShadow: 'var(--shadow-sm)',
-          }}>
-            <div style={{
-              padding: '10px 14px', borderBottom: '1px solid var(--border)',
-              display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface-2)',
-            }}>
-              <ImageIcon color="var(--text-secondary)" size={16} />
-              <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>Preview</span>
-            </div>
-            <img
-              src={previewUrl}
-              alt="Invoice preview"
-              style={{ width: '100%', maxHeight: '480px', objectFit: 'contain', display: 'block', background: '#f9fafb' }}
-            />
+        {/* Image preview(s) — right column (or full width if drop zone is hidden) */}
+        {showPreviews && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {previewUrls.map((url, i) => (
+              <div key={i} style={{
+                borderRadius: 'var(--radius)', overflow: 'hidden',
+                border: '1px solid var(--border)', background: 'var(--surface)', boxShadow: 'var(--shadow-sm)',
+              }}>
+                <div style={{
+                  padding: '10px 14px', borderBottom: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', gap: 8, background: 'var(--surface-2)',
+                }}>
+                  <ImageIcon color="var(--text-secondary)" size={16} />
+                  <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)', flex: 1 }}>
+                    {maxFiles > 1 ? `Page ${i + 1}` : 'Preview'}
+                  </span>
+                  {maxFiles > 1 && !disabled && (
+                    <button
+                      onClick={() => onRemove(i)}
+                      title="Remove"
+                      style={{
+                        width: 22, height: 22, borderRadius: '50%',
+                        border: '1px solid var(--error)', background: 'var(--error-light)',
+                        color: 'var(--error)', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '13px', lineHeight: 1, padding: 0, flexShrink: 0,
+                      }}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+                <img
+                  src={url}
+                  alt="Invoice preview"
+                  style={{ width: '100%', maxHeight: '480px', objectFit: 'contain', display: 'block', background: '#f9fafb' }}
+                />
+                {maxFiles === 1 && !disabled && (
+                  <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
+                    <button
+                      onClick={() => onRemove(i)}
+                      style={{
+                        width: '100%',
+                        padding: '10px 16px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--error)',
+                        background: 'var(--error-light)',
+                        color: 'var(--error)',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>

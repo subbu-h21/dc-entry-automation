@@ -180,22 +180,30 @@ def _reasoning_body(model: str) -> dict:
 
 
 async def extract_invoice_data(
-    image_bytes: bytes,
-    mime_type: str,
+    images: list[tuple[bytes, str]],
     model: str | None = None,
     reasoning: bool = False,
     product_image_bytes: bytes | None = None,
     product_image_mime: str | None = None,
 ) -> dict:
-    b64 = base64.b64encode(image_bytes).decode("utf-8")
-    data_url = f"data:{mime_type};base64,{b64}"
-
     chosen_model = model or EXTRACTION_MODEL
-    log.info("Sending image to %s for extraction (reasoning=%s, product_image=%s)", chosen_model, reasoning, product_image_bytes is not None)
+    log.info(
+        "Sending %d invoice page(s) to %s for extraction (reasoning=%s, product_image=%s)",
+        len(images), chosen_model, reasoning, product_image_bytes is not None,
+    )
 
     extra_body = _reasoning_body(chosen_model) if reasoning else {}
 
     prompt_text = PROMPT
+    if len(images) > 1:
+        prompt_text += (
+            "\n\n<multi_page_invoice>\n"
+            "The following images are consecutive pages of the SAME delivery note / invoice, "
+            "in page order. Treat them as one continuous document — extract header fields once "
+            "(they typically only appear on the first page) and combine every product row from "
+            "every page into a single products array.\n"
+            "</multi_page_invoice>"
+        )
     if product_image_bytes and product_image_mime:
         prompt_text += (
             "\n\n<product_image>\n"
@@ -205,10 +213,11 @@ async def extract_invoice_data(
             "</product_image>"
         )
 
-    content: list[dict] = [
-        {"type": "text", "text": prompt_text},
-        {"type": "image_url", "image_url": {"url": data_url}},
-    ]
+    content: list[dict] = [{"type": "text", "text": prompt_text}]
+    for image_bytes, mime_type in images:
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        data_url = f"data:{mime_type};base64,{b64}"
+        content.append({"type": "image_url", "image_url": {"url": data_url}})
 
     if product_image_bytes and product_image_mime:
         p_b64 = base64.b64encode(product_image_bytes).decode("utf-8")

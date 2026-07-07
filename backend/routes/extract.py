@@ -89,24 +89,28 @@ MAX_SIZE = 10 * 1024 * 1024  # 10 MB
 
 @router.post("/extract")
 async def extract(
-    image: UploadFile = File(...),
+    images: list[UploadFile] = File(...),
     model: str | None = Form(None),
     reasoning: bool = Form(False),
     product_image: UploadFile | None = File(None),
 ):
-    if not image:
+    if not images:
         raise HTTPException(status_code=400, detail="No image provided.")
 
-    if image.content_type not in ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail=f'Invalid file type "{image.content_type}". Allowed: JPEG, PNG, WebP, GIF.',
-        )
+    if len(images) > 2:
+        raise HTTPException(status_code=400, detail="Maximum 2 invoice pages allowed.")
 
-    image_bytes = await image.read()
-
-    if len(image_bytes) > MAX_SIZE:
-        raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
+    image_payloads: list[tuple[bytes, str]] = []
+    for img in images:
+        if img.content_type not in ALLOWED_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f'Invalid file type "{img.content_type}". Allowed: JPEG, PNG, WebP, GIF.',
+            )
+        img_bytes = await img.read()
+        if len(img_bytes) > MAX_SIZE:
+            raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
+        image_payloads.append((img_bytes, img.content_type))
 
     product_image_bytes: bytes | None = None
     product_image_mime: str | None = None
@@ -124,7 +128,7 @@ async def extract(
     try:
         # Step 1 — Gemini extracts product_name / quantity / batch_number
         result = await extract_invoice_data(
-            image_bytes, image.content_type,
+            image_payloads,
             model=model, reasoning=reasoning,
             product_image_bytes=product_image_bytes,
             product_image_mime=product_image_mime,

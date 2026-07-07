@@ -28,9 +28,16 @@ _EXT_MAP = {
     "image/gif": ".gif",
 }
 
-# Photo types pulled in from dc_pipeline's DC records — "package" (product
-# packaging shots) isn't useful for invoice extraction, so it's excluded.
-_PIPELINE_PHOTO_TYPES = {"invoice", "corrected"}
+# Photo types pulled in from dc_pipeline's DC records. Pipeline-imported files
+# are saved with a "{type}_" filename prefix; _infer_photo_type reads it back.
+_PIPELINE_PHOTO_TYPES = {"invoice", "corrected", "package"}
+
+
+def _infer_photo_type(filename: str) -> str:
+    for photo_type in _PIPELINE_PHOTO_TYPES:
+        if filename.startswith(f"{photo_type}_"):
+            return photo_type
+    return "invoice"
 
 
 def _find_file(image_id: str) -> str | None:
@@ -121,15 +128,16 @@ async def import_from_pipeline(
             content_type = img_resp.headers.get("content-type", "image/jpeg")
             ext = _EXT_MAP.get(content_type, ".jpg")
             image_id = str(uuid.uuid4())
-            filename = f"{image_id}{ext}"
+            stem = f"{photo['photo_type']}_{image_id}"
+            filename = f"{stem}{ext}"
             path = os.path.join(INBOX_DIR, filename)
             with open(path, "wb") as f:
                 f.write(img_resp.content)
 
             imported.append({
-                "id": image_id,
+                "id": stem,
                 "filename": filename,
-                "source_photo_type": photo["photo_type"],
+                "photo_type": photo["photo_type"],
             })
 
     log.info(
@@ -155,6 +163,7 @@ def list_inbox():
             "filename": name,
             "uploaded_at": uploaded_at,
             "thumbnail_url": f"/inbox/thumb/{stem}",
+            "photo_type": _infer_photo_type(name),
         })
     items.sort(key=lambda x: x["uploaded_at"], reverse=True)
     return items

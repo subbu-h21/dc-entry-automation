@@ -16,7 +16,7 @@ import {
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
 type LaunchStatus = 'idle' | 'loading' | 'open';
-type InboxItem = { id: string; filename: string; uploaded_at: string; thumbnail_url: string };
+type InboxItem = { id: string; filename: string; uploaded_at: string; thumbnail_url: string; photo_type: string };
 
 function formatInboxTime(iso: string): string {
   const diffMins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -33,12 +33,13 @@ const EXTRACTION_MODELS = [
   { value: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', supportsReasoning: false },
   { value: 'google/gemini-3.1-flash',      label: 'Gemini 3.1 Flash',      supportsReasoning: true },
   { value: 'google/gemini-3.1-pro',        label: 'Gemini 3.1 Pro',        supportsReasoning: true },
-  { value: 'google/gemini-2.5-flash-lite',      label: 'Gemini 2.5 Flash Lite',      supportsReasoning: true },
+  { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', supportsReasoning: true },
   { value: 'google/gemini-3.5-pro',        label: 'Gemini 3.5 Pro',        supportsReasoning: true },
   { value: 'openai/gpt-4.1-mini',          label: 'GPT-4.1 Mini',          supportsReasoning: false },
   { value: 'google/gemma-4-31b-it',        label: 'Gemma 4 31b It',        supportsReasoning: false },
-  { value: 'nex-agi/nex-n2-pro:free',     label: 'Nex N2 Pro (free)',     supportsReasoning: true },
-  {value: 'openai/gpt-5.4', label: 'GPT-5.4', supportsReasoning: true}
+  { value: 'nex-agi/nex-n2-pro:free',      label: 'Nex N2 Pro (free)',     supportsReasoning: true },
+  { value:  'openai/gpt-5.4',              label: 'GPT-5.4',               supportsReasoning: true},
+  { value:  'xiaomi/mimo-v2.5' ,           label: 'Mimo v2.5',             supportsReasoning: false},
 ];
 
 
@@ -210,8 +211,8 @@ function InboxUploadPage() {
 }
 
 export default function App() {
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [invoiceFiles, setInvoiceFiles] = useState<File[]>([]);
+  const [invoicePreviews, setInvoicePreviews] = useState<string[]>([]);
   const [productImage, setProductImage] = useState<File | null>(null);
   const [productImagePreviewUrl, setProductImagePreviewUrl] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>(() => {
@@ -265,6 +266,13 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  // Keep invoicePreviews in sync with invoiceFiles, revoking old object URLs.
+  useEffect(() => {
+    const urls = invoiceFiles.map(f => URL.createObjectURL(f));
+    setInvoicePreviews(urls);
+    return () => { urls.forEach(u => URL.revokeObjectURL(u)); };
+  }, [invoiceFiles]);
+
   // Persist key state to sessionStorage
   useEffect(() => { sessionStorage.setItem('dc_products',   JSON.stringify(products)); }, [products]);
   useEffect(() => { sessionStorage.setItem('dc_number',     dcNumber); },    [dcNumber]);
@@ -298,10 +306,11 @@ export default function App() {
   const selectedModelMeta = EXTRACTION_MODELS.find(m => m.value === extractionModel);
   const reasoningSupported = selectedModelMeta?.supportsReasoning ?? false;
 
-  const handleFileSelect = useCallback((selected: File) => {
-    // Clear all persisted state for the new entry
+  // Resets everything but the invoice images themselves — called only when
+  // starting a fresh entry (both invoice page slots were empty beforehand),
+  // not when adding a second page to an entry already in progress.
+  const resetEntryState = () => {
     ['dc_products', 'dc_number', 'dc_date', 'dc_supplier'].forEach(k => sessionStorage.removeItem(k));
-    setFile(selected);
     setProducts([]);
     setStatus('idle');
     setErrorMsg('');
@@ -311,14 +320,15 @@ export default function App() {
     setScreenshotUrl(null);
     setSaveStatus('idle');
     setLaunchStatus('idle');
-    setProductImage(null);
-    setProductImagePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+  };
 
-    const url = URL.createObjectURL(selected);
-    setPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return url;
-    });
+  const handleInvoiceFilesChange = useCallback((files: File[]) => {
+    if (invoiceFiles.length === 0 && files.length > 0) resetEntryState();
+    setInvoiceFiles(files);
+  }, [invoiceFiles]);
+
+  const handleInvoiceRemove = useCallback((index: number) => {
+    setInvoiceFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
 
   const handleProductImageSelect = useCallback((selected: File) => {
@@ -326,13 +336,18 @@ export default function App() {
     setProductImagePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(selected); });
   }, []);
 
-  const doExtract = async (imageFile: File, prodImg: File | null = productImage) => {
+  const handleProductImageClear = useCallback(() => {
+    setProductImage(null);
+    setProductImagePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+  }, []);
+
+  const doExtract = async (imageFiles: File[], prodImg: File | null = productImage) => {
     setStatus('loading');
     setErrorMsg('');
     setProducts([]);
 
     const formData = new FormData();
-    formData.append('image', imageFile);
+    imageFiles.forEach(f => formData.append('images', f));
     formData.append('model', extractionModel);
     formData.append('reasoning', String(reasoning));
     if (prodImg) formData.append('product_image', prodImg);
@@ -358,8 +373,8 @@ export default function App() {
   };
 
   const handleExtract = () => {
-    if (!file) return;
-    doExtract(file);
+    if (invoiceFiles.length === 0) return;
+    doExtract(invoiceFiles);
   };
 
   const handleInboxUpload = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -416,10 +431,20 @@ export default function App() {
         png: 'image/png', webp: 'image/webp', gif: 'image/gif',
       };
       const imageFile = new File([blob], item.filename, { type: mimeMap[ext] ?? 'image/jpeg' });
-      handleFileSelect(imageFile);
+
+      let assigned = true;
+      if (item.photo_type === 'package') {
+        handleProductImageSelect(imageFile);
+      } else if (invoiceFiles.length < 2) {
+        handleInvoiceFilesChange([...invoiceFiles, imageFile]);
+      } else {
+        assigned = false;
+      }
+
+      if (!assigned) return; // both invoice page slots already full — leave it in the inbox
+
       fetch(`/inbox/${item.id}`, { method: 'DELETE' }).catch(() => {});
       setInboxItems(prev => prev.filter(i => i.id !== item.id));
-      doExtract(imageFile, null);
     } catch {}
   };
 
@@ -474,7 +499,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [launchStatus, tabId]);
 
-  const canExtract = file !== null && status !== 'loading';
+  const canExtract = invoiceFiles.length > 0 && status !== 'loading';
   const pipelineInputsValid = !!pipelineDcNumber.trim() && pipelineSupplierId !== null;
 
   if (window.location.pathname === '/inbox-upload') {
@@ -653,11 +678,30 @@ export default function App() {
                       (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
                     }}
                   >
-                    <img
-                      src={item.thumbnail_url}
-                      alt=""
-                      style={{ width: 100, height: 80, objectFit: 'cover', display: 'block' }}
-                    />
+                    <div style={{ position: 'relative' }}>
+                      <img
+                        src={item.thumbnail_url}
+                        alt=""
+                        style={{ width: 100, height: 80, objectFit: 'cover', display: 'block' }}
+                      />
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: 4,
+                          left: 4,
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.03em',
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          background: item.photo_type === 'package' ? 'var(--accent)' : 'rgba(0,0,0,0.55)',
+                          color: '#fff',
+                        }}
+                      >
+                        {item.photo_type}
+                      </span>
+                    </div>
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)', padding: '4px 8px', display: 'block', textAlign: 'center' }}>
                       {formatInboxTime(item.uploaded_at)}
                     </span>
@@ -702,22 +746,25 @@ export default function App() {
 
         {/* Upload section */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <SectionCard title="Upload Invoice" icon={<UploadSectionIcon />}>
+          <SectionCard title="Upload Invoice (up to 2 pages)" icon={<UploadSectionIcon />}>
             <ImageUpload
-              onFileSelect={handleFileSelect}
-              selectedFile={file}
-              previewUrl={previewUrl}
+              onFilesChange={handleInvoiceFilesChange}
+              selectedFiles={invoiceFiles}
+              previewUrls={invoicePreviews}
               disabled={status === 'loading'}
+              maxFiles={2}
+              onRemove={handleInvoiceRemove}
             />
           </SectionCard>
 
           {/* Optional product image */}
           <SectionCard title="Product's Image (optional)" icon={<UploadSectionIcon />}>
             <ImageUpload
-              onFileSelect={handleProductImageSelect}
-              selectedFile={productImage}
-              previewUrl={productImagePreviewUrl}
+              onFilesChange={files => { const f = files[0]; if (f) handleProductImageSelect(f); }}
+              selectedFiles={productImage ? [productImage] : []}
+              previewUrls={productImagePreviewUrl ? [productImagePreviewUrl] : []}
               disabled={status === 'loading'}
+              onRemove={handleProductImageClear}
             />
           </SectionCard>
 
