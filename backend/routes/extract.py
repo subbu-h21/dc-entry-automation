@@ -75,6 +75,10 @@ def _fix_batch(products: list[dict]) -> None:
         p['batch_number'] = _NON_ALNUM_RE.sub('', p.get('batch_number', ''))
 
 
+def _fix_dc_number(dc_number: str) -> str:
+    return _NON_ALNUM_RE.sub('', dc_number)
+
+
 def _match_supplier(extracted: str) -> str:
     """Fuzzy-map an extracted supplier string to the nearest known supplier."""
     if not extracted:
@@ -177,7 +181,7 @@ async def extract(
         matched_supplier = _match_supplier(raw_supplier)
 
         return JSONResponse(content={
-            "dc_number":        result.get("dc_number", ""),
+            "dc_number":        _fix_dc_number(result.get("dc_number", "")),
             "dc_date":          result.get("dc_date", ""),
             "supplier_name":    matched_supplier,
             "products":         products,

@@ -159,7 +159,14 @@ For every row in the product table extract:
 - rate          : Rate / Price column value; 0 if absent
 - quantity      : paid units only — apply <free_qty_rule>
 - free          : free units only — apply <free_qty_rule>
-- disc_percent  : Disc% column value; 0 if absent
+- disc_percent  : Discount % column value; 0 if absent.
+                  The column header may be printed as "Disc", "Disc%", "Dis",
+                  "Dis%", "Discount", "Discnt", or similar — treat all of these
+                  as the same field.
+                  Do NOT confuse this with GST%, CGST%, SGST%, IGST%, or any
+                  Tax% column — those are a different field. Ignore them
+                  entirely for this purpose, even if printed right next to the
+                  discount column.
 </product_fields>"""
 
 
