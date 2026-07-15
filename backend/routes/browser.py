@@ -10,12 +10,15 @@ import time
 import uuid
 from datetime import datetime
 
+import httpx
 import openpyxl
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from playwright.async_api import async_playwright
+
+from config import DC_PIPELINE_URL
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -47,7 +50,7 @@ class _Session:
     def __init__(self):
         self.alive = threading.Event()
         self.kill  = threading.Event()
-        self.save  = threading.Event()
+        self.stage3_reported = False
 
 
 _sessions: dict[str, _Session] = {}
@@ -391,6 +394,55 @@ async def retrigger_calculations(page, product_count: int):
 
 
 # =========================================================
+# STAGE 3 — detect CRM save success, report to dc_pipeline
+# =========================================================
+
+# Employees click Save directly inside this Playwright-controlled Chromium
+# window, so detection watches the page itself (via the poll loop below)
+# rather than gating on any button click. Selector is unverified against the
+# live CRM — requires both "saved" and "reference no" in proximity to cut
+# false-positive risk from unrelated static page text; needs live-test
+# tightening if it doesn't match.
+_STAGE3_SUCCESS_JS = r"""
+() => {
+    const text = document.body.innerText || '';
+    if (!/saved[\s\S]{0,60}reference\s*no/i.test(text)) return null;
+    const m = /reference\s*no\.?\s*:?\s*([A-Za-z0-9\-\/]+)/i.exec(text);
+    return m ? m[1] : '';
+}
+"""
+
+
+async def _check_stage3_success(page) -> str | None:
+    try:
+        return await page.evaluate(_STAGE3_SUCCESS_JS)
+    except Exception:
+        log.exception("Stage 3 success-dialog check failed")
+        return None
+
+
+async def _report_stage3(details: DCDetails, reference_no: str) -> None:
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(
+                f"{DC_PIPELINE_URL}/stage3/save",
+                data={
+                    "dc_number": details.dc_number,
+                    "supplier_name": details.supplier,
+                    "checked_by": details.checked_by,
+                    "reference_no": reference_no,
+                },
+            )
+            resp.raise_for_status()
+        log.info(
+            "Reported Stage 3 save to dc_pipeline: dc=%s checked_by=%r ref=%r",
+            details.dc_number, details.checked_by, reference_no,
+        )
+    except httpx.HTTPError as e:
+        log.warning("Failed to report Stage 3 save to dc_pipeline: %s", e)
+
+
+# =========================================================
 # MAIN COROUTINE
 # =========================================================
 
@@ -422,13 +474,11 @@ async def _browser_coroutine(session_id: str, details: DCDetails):
             if session.kill.is_set():
                 await browser.close()
                 break
-            if session.save.is_set():
-                session.save.clear()
-                try:
-                    await page.locator('button.buttoncolor', has_text='Save').first.click()
-                    log.info("Clicked Save for session %s", session_id)
-                except Exception:
-                    log.exception("Failed to click Save for session %s", session_id)
+            if not session.stage3_reported:
+                reference_no = await _check_stage3_success(page)
+                if reference_no is not None:
+                    session.stage3_reported = True
+                    await _report_stage3(details, reference_no)
             await asyncio.sleep(0.5)
 
     session.alive.clear()
@@ -454,15 +504,6 @@ def get_screenshot(tab_id: str):
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="No screenshot yet")
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-store"})
-
-
-@router.post("/save-dc/{session_id}")
-def save_dc(session_id: str):
-    session = _sessions.get(session_id)
-    if not session or not session.alive.is_set():
-        raise HTTPException(status_code=400, detail="No active browser session")
-    session.save.set()
-    return {"status": "saving"}
 
 
 @router.post("/launch-browser")

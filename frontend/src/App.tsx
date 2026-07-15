@@ -233,7 +233,6 @@ export default function App() {
   const [entryMode, setEntryMode] = useState<'excel' | 'type'>(() => (sessionStorage.getItem('dc_entry_mode') as 'excel' | 'type') ?? 'excel');
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [tabId] = useState<string>(() => {
     const existing = sessionStorage.getItem('tab_id');
     if (existing) return existing;
@@ -318,7 +317,6 @@ export default function App() {
     setDcDate('');
     setSupplier('');
     setScreenshotUrl(null);
-    setSaveStatus('idle');
     setLaunchStatus('idle');
   };
 
@@ -448,20 +446,9 @@ export default function App() {
     } catch {}
   };
 
-  const handleSaveDC = async () => {
-    setSaveStatus('saving');
-    try {
-      await fetch(`/save-dc/${tabId}`, { method: 'POST' });
-      setSaveStatus('saved');
-    } catch {
-      setSaveStatus('idle');
-    }
-  };
-
   const handleLaunchBrowser = async (resolvedProducts: ResolvedProduct[]) => {
     setLaunchStatus('loading');
     setScreenshotUrl(null);
-    setSaveStatus('idle');
     try {
       const res = await fetch('/launch-browser', {
         method: 'POST',
@@ -967,27 +954,8 @@ export default function App() {
               <img
                 src={screenshotUrl}
                 alt="DC entry screenshot"
-                style={{ width: '100%', borderRadius: 'var(--radius-sm)', display: 'block', marginBottom: 16 }}
+                style={{ width: '100%', borderRadius: 'var(--radius-sm)', display: 'block' }}
               />
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={handleSaveDC}
-                  disabled={saveStatus !== 'idle'}
-                  style={{
-                    background: saveStatus === 'saved' ? 'var(--success)' : 'var(--accent)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 'var(--radius-sm)',
-                    padding: '10px 28px',
-                    fontSize: '15px',
-                    fontWeight: 600,
-                    cursor: saveStatus !== 'idle' ? 'not-allowed' : 'pointer',
-                    opacity: saveStatus === 'saving' ? 0.7 : 1,
-                  }}
-                >
-                  {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved ✓' : 'Save DC'}
-                </button>
-              </div>
             </SectionCard>
           )}
         </div>

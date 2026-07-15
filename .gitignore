@@ -20,6 +20,10 @@ frontend/.vite/
 playwright-report/
 test-results/
 
+# Runtime-generated (screenshots per browser session, phone-camera uploads)
+backend/screenshots/
+backend/inbox/
+
 # OS
 .DS_Store
 Thumbs.db

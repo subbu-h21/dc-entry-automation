@@ -14,7 +14,6 @@ export default defineConfig({
       '/products':       { target: 'http://localhost:3001', changeOrigin: true },
       '/suppliers':      { target: 'http://localhost:3001', changeOrigin: true },
       '/screenshot':     { target: 'http://localhost:3001', changeOrigin: true },
-      '/save-dc':        { target: 'http://localhost:3001', changeOrigin: true },
       '^/inbox(/|$)':    { target: 'http://localhost:3001', changeOrigin: true },
     },
   },
