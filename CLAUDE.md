@@ -12,7 +12,7 @@ The repo root only contains `dc-entry-automation/` — that's the whole project.
 ```
 setup.bat
 ```
-Creates `backend/venv`, installs `backend/requirements.txt`, installs the Playwright Chromium browser, installs `frontend/` npm deps, and copies `backend/.env.example` → `backend/.env`. After running it, fill in `backend/.env` (`OPENROUTER_API_KEY`, `ELEVENLABS_API_KEY`, `PRODUCT_LIST_PATH`).
+Creates `backend/venv`, installs `backend/requirements.txt`, installs the Playwright Chromium browser, installs `frontend/` npm deps, and copies `backend/.env.example` → `backend/.env`. After running it, fill in `backend/.env` (`OPENROUTER_API_KEY`, `ELEVENLABS_API_KEY`); `PRODUCT_LIST_PATH` already defaults to `../Product_List.xlsx` and only needs changing if that workbook lives somewhere else.
 
 ### Day-to-day development
 Run backend and frontend separately so the frontend hot-reloads:
