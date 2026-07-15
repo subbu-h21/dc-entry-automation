@@ -31,6 +31,7 @@ const EXTRACTION_MODELS = [
   { value: 'google/gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      supportsReasoning: true },
   { value: 'google/gemini-2.5-pro',        label: 'Gemini 2.5 Pro',        supportsReasoning: true },
   { value: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', supportsReasoning: false },
+  { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', supportsReasoning: true },
   { value: 'google/gemini-3.1-flash',      label: 'Gemini 3.1 Flash',      supportsReasoning: true },
   { value: 'google/gemini-3.1-pro',        label: 'Gemini 3.1 Pro',        supportsReasoning: true },
   { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', supportsReasoning: true },
@@ -789,7 +790,7 @@ export default function App() {
             </label>
           </div>
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            Use <strong>3.1 Flash Lite</strong> for smaller DCs &nbsp;·&nbsp; <strong>2.5 Pro</strong> for larger DCs with reasoning turned on
+            Use <strong>3.1 Flash Lite</strong> for smaller DCs &nbsp;·&nbsp; <strong>3 Flash Preview</strong> for larger DCs with reasoning turned on
           </span>
           </div>
 
