@@ -31,6 +31,8 @@ if not exist .env (
     echo  - OPENROUTER_API_KEY
     echo  - ELEVENLABS_API_KEY
     echo  - DC_PIPELINE_URL    (only if dc_pipeline runs somewhere other than http://localhost:3002)
+    echo  - HOSPET_ROAD_USERNAME / HOSPET_ROAD_PASSWORD     (CRM login, required for Launch Browser)
+    echo  - SHIVAJI_CHOWK_USERNAME / SHIVAJI_CHOWK_PASSWORD (CRM login, required for Launch Browser)
     echo.
 ) else (
     echo backend\.env already exists, skipping.

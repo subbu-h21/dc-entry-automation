@@ -25,6 +25,19 @@ ALLOWED_ORIGINS: list[str] = [
 
 DC_PIPELINE_URL: str = os.getenv("DC_PIPELINE_URL", "http://localhost:3002")
 
+# Per-branch CRM login credentials (shubhadahealth.com), used by routes/browser.py.
+# Must be set in .env — no defaults, since these are real login credentials.
+BRANCH_CREDENTIALS: dict[str, tuple[str, str]] = {
+    "HOSPET ROAD":   (os.getenv("HOSPET_ROAD_USERNAME", ""),   os.getenv("HOSPET_ROAD_PASSWORD", "")),
+    "SHIVAJI CHOWK": (os.getenv("SHIVAJI_CHOWK_USERNAME", ""), os.getenv("SHIVAJI_CHOWK_PASSWORD", "")),
+}
+if not all(u and p for u, p in BRANCH_CREDENTIALS.values()):
+    log.warning(
+        "One or more branch CRM credentials are missing from .env "
+        "(HOSPET_ROAD_USERNAME/PASSWORD, SHIVAJI_CHOWK_USERNAME/PASSWORD) — "
+        "Launch Browser will fail to log in for that branch."
+    )
+
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRODUCT_LIST_PATH: str = os.getenv("PRODUCT_LIST_PATH", os.path.join(_root, "Product_List.xlsx"))
 PRODUCT_LIST_SHEET: str = os.getenv("PRODUCT_LIST_SHEET", "data")

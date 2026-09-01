@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from playwright.async_api import async_playwright
 
-from config import DC_PIPELINE_URL
+from config import DC_PIPELINE_URL, BRANCH_CREDENTIALS
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -39,12 +39,6 @@ def _cleanup_old_screenshots():
 
 
 _cleanup_old_screenshots()
-
-_BRANCH_CREDENTIALS = {
-    "HOSPET ROAD":   ("9448188002", "Q"),
-    "SHIVAJI CHOWK": ("ghegde",    "q"),
-}
-
 
 class _Session:
     def __init__(self):
@@ -84,7 +78,7 @@ class DCDetails(BaseModel):
 # =========================================================
 
 async def login(page, branch: str = "HOSPET ROAD"):
-    username, password = _BRANCH_CREDENTIALS.get(branch, _BRANCH_CREDENTIALS["HOSPET ROAD"])
+    username, password = BRANCH_CREDENTIALS.get(branch, BRANCH_CREDENTIALS["HOSPET ROAD"])
     await page.goto("https://shubhadahealth.com:7007/")
     await page.locator("#mat-input-0").fill(username)
     await page.locator("#mat-input-1").fill(password)
