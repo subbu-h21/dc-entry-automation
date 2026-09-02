@@ -55,6 +55,7 @@ HOSPET_ROAD_USERNAME=...
 HOSPET_ROAD_PASSWORD=...
 SHIVAJI_CHOWK_USERNAME=...
 SHIVAJI_CHOWK_PASSWORD=...
+ADMIN_PIN=2009
 ```
 
 > Get an OpenRouter key at https://openrouter.ai/keys
@@ -63,6 +64,9 @@ The four `*_USERNAME`/`*_PASSWORD` values are the CRM (`shubhadahealth.com`) log
 each branch — ask whoever manages that system if you don't have them. **Launch
 Browser** (auto-filling the DC form) won't be able to log in without these set; every
 other feature works fine without them.
+
+`ADMIN_PIN` gates the **Admin** page (see below) — ships working with the default
+shown above; change it here to rotate it.
 
 `PRODUCT_LIST_PATH` defaults to `../Product_List.xlsx` (i.e. `Product_List.xlsx` at
 the project root, next to `backend/` and `frontend/`) and doesn't need to be set
@@ -97,16 +101,41 @@ that's only for day-to-day development (see `CLAUDE.md`).
      them up on the desktop page — or, if the same delivery was already
      photographed in the separate `dc_pipeline` app, pull those photos in
      directly by DC number + supplier via the Inbox's "Fetch from Pipeline".
-2. Select the extraction model from the dropdown: **3.1 Flash Lite** (default)
-   for smaller DCs, **3 Flash Preview** with **Reasoning** enabled for larger or
-   multi-page ones. Other Gemini/GPT models are available too if you want to try
-   alternatives.
+2. Select the extraction model from the dropdown: **Lite** (default, Gemini
+   3.1 Flash Lite) for smaller DCs, or **Lite 2** / **Pro** / **Pro 2** with
+   **Reasoning** enabled for larger or multi-page ones.
 3. Click **Extract Products**
 4. Review and edit the extracted table
 5. Click **Launch Browser** — this opens a visible Chromium window logged into
    the CRM with the DC form filled in. Review it there and click the CRM's own
    **Save** button to save the entry (there is no separate in-app save step);
    the app detects the save and credits it on the pharmacy's Stage 3 leaderboard.
+
+---
+
+## Admin page
+
+Click **Admin** in the header (or go to `/admin` directly) to reach a PIN-gated
+page (default PIN `2009`, see `ADMIN_PIN` above) for two things the shop owner
+manages directly, without editing any code:
+
+- **Employees** — add or remove names from the staff roster. This is the same
+  list used by the "Checked By" dropdown and by voice-command matching
+  ("checked by Ganesh" → the closest staff name) — an edit here takes effect
+  immediately, no restart needed.
+- **Product Catalog** — upload a replacement `.xlsx` file for the product
+  catalog used for matching. It's validated (right sheet, right columns)
+  *before* anything is replaced — an invalid file is rejected with a clear
+  error and the live catalog is left untouched. A successful upload replaces
+  the catalog immediately (again, no restart) and keeps one backup of the
+  previous file (`Product_List.backup.xlsx`) so the last upload can be undone
+  by hand if needed. PDF upload isn't supported yet, only Excel.
+
+The PIN is checked by the backend on every admin request, not just hidden by
+the page — so it can't be bypassed by skipping the PIN screen. That said, a
+4-digit PIN with no limit on repeated wrong guesses is only a meaningful
+barrier while this backend stays off the open internet; this app has no
+broader login system beyond this one PIN check.
 
 ---
 
@@ -123,8 +152,9 @@ dc-entry-automation/
 │   │   ├── extract.py           # POST /extract — image(s) → product rows
 │   │   ├── browser.py           # POST /launch-browser — Playwright DC fill
 │   │   ├── voice.py             # POST /voice/command — voice corrections
-│   │   ├── products.py          # GET /suppliers, GET /products/search
-│   │   └── inbox.py             # GET/POST /inbox/* — phone uploads + dc_pipeline photo import
+│   │   ├── products.py          # GET /suppliers, GET /staff, GET /products/search
+│   │   ├── inbox.py             # GET/POST /inbox/* — phone uploads + dc_pipeline photo import
+│   │   └── admin.py             # PIN-gated: staff add/remove, product-catalog upload
 │   └── services/
 │       ├── openrouter.py        # Gemini extraction via OpenRouter
 │       ├── product_matcher.py   # Two-stage fuzzy SKU matching
@@ -133,12 +163,14 @@ dc-entry-automation/
 ├── frontend/
 │   ├── src/
 │   │   ├── App.tsx              # Top-level state and layout
+│   │   ├── styles.ts            # Shared style-object constants
 │   │   └── components/
 │   │       ├── ResultsTable.tsx # Editable table + voice UI
 │   │       ├── ImageUpload.tsx  # Drag-and-drop upload
+│   │       ├── AdminPage.tsx    # PIN-gated staff/catalog admin page
 │   │       └── icons.tsx        # SVG icons
 │   └── vite.config.ts           # Proxy: /extract, /launch-browser, /voice, /products,
-│                                 #   /suppliers, /screenshot, /inbox → :3001
+│                                 #   /suppliers, /staff, /screenshot, /inbox, /admin → :3001
 ├── setup.bat                    # First-time setup script
 └── start.bat                    # Build frontend, launch backend, open browser
 ```

@@ -15,6 +15,17 @@ export default defineConfig({
       '/suppliers':      { target: 'http://localhost:3001', changeOrigin: true },
       '/screenshot':     { target: 'http://localhost:3001', changeOrigin: true },
       '^/inbox(/|$)':    { target: 'http://localhost:3001', changeOrigin: true },
+      '/staff':          { target: 'http://localhost:3001', changeOrigin: true },
+      // Trailing-slash regex, not a plain '/admin' prefix: bare /admin is
+      // the FRONTEND page route (see App.tsx), not a backend endpoint — only
+      // /admin/verify-pin etc. exist server-side. A plain prefix would catch
+      // the page-load request itself and send it to the backend, where
+      // nothing matches it, breaking /admin under `npm run dev` only (prod
+      // is unaffected — main.py serves everything on one port there). This
+      // leaves the bare page load to fall through to Vite's normal SPA
+      // serving, same as /inbox-upload already relies on with no proxy entry
+      // at all, while still forwarding every real /admin/* API call.
+      '^/admin/':        { target: 'http://localhost:3001', changeOrigin: true },
     },
   },
 });

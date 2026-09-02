@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef, ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import ImageUpload from './components/ImageUpload';
 import ResultsTable, { Product, ResolvedProduct } from './components/ResultsTable';
+import AdminPage from './components/AdminPage';
+import { labelStyle, labelText, inputStyle } from './styles';
 import {
   PillIcon,
   UploadSectionIcon,
@@ -27,76 +29,23 @@ function formatInboxTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+// Vision-capable extraction models offered in the dropdown — kept to a short,
+// hand-picked list (not fetched from OpenRouter's catalog) since that's this
+// app's existing pattern. Each id/supportsReasoning value verified directly
+// against OpenRouter's live /api/v1/models response — all four are real,
+// image-input-capable, and list "reasoning" in their supported_parameters
+// (Gemini 3.1 Flash Lite is the exception on reasoning — verified 2026-09-02
+// per the original 3-model list; not re-checked since, unchanged from before).
+// Note google/gemini-3.6-flash has no undated alias on OpenRouter — the
+// pinned, dated slug below is the real id (verified 2026-09-02).
 const EXTRACTION_MODELS = [
-  { value: 'google/gemini-2.5-flash',      label: 'Gemini 2.5 Flash',      supportsReasoning: true },
-  { value: 'google/gemini-2.5-pro',        label: 'Gemini 2.5 Pro',        supportsReasoning: true },
-  { value: 'google/gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite', supportsReasoning: false },
-  { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', supportsReasoning: true },
-  { value: 'google/gemini-3.1-flash',      label: 'Gemini 3.1 Flash',      supportsReasoning: true },
-  { value: 'google/gemini-3.1-pro',        label: 'Gemini 3.1 Pro',        supportsReasoning: true },
-  { value: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', supportsReasoning: true },
-  { value: 'google/gemini-3.5-pro',        label: 'Gemini 3.5 Pro',        supportsReasoning: true },
-  { value: 'openai/gpt-4.1-mini',          label: 'GPT-4.1 Mini',          supportsReasoning: false },
-  { value: 'google/gemma-4-31b-it',        label: 'Gemma 4 31b It',        supportsReasoning: false },
-  { value: 'nex-agi/nex-n2-pro:free',      label: 'Nex N2 Pro (free)',     supportsReasoning: true },
-  { value:  'openai/gpt-5.4',              label: 'GPT-5.4',               supportsReasoning: true},
-  { value:  'xiaomi/mimo-v2.5' ,           label: 'Mimo v2.5',             supportsReasoning: false},
+  { value: 'google/gemini-3.1-flash-lite',    label: 'Lite',   supportsReasoning: false },
+  { value: 'qwen/qwen3.8-flash',              label: 'Lite 2', supportsReasoning: true },
+  { value: 'google/gemini-3.7-flash',         label: 'Pro',    supportsReasoning: true },
+  { value: 'google/gemini-3.6-flash-20260721', label: 'Pro 2',  supportsReasoning: true },
 ];
 
 
-const STAFF_NAMES = [
-  'Abhishek Seetaram Naik',
-  'Akshata',
-  'Archana Gopal Marathi',
-  'Chaitra G Naik',
-  'Dattatraya V Hegde',
-  'Deepa Manjunatha Gouda',
-  'Fazil Unshalli',
-  'Ganesh Hegde',
-  'Harsha N',
-  'Harshita Suresh Naik',
-  'Keerthana M',
-  'Krishnamoorthy',
-  'Laxmi R Palankar',
-  'Manjunata D Gosavi',
-  'Mohan Gowda',
-  'Narendra',
-  'Netravati Prakash Kothari',
-  'Nivedita M K',
-  'Parashuram T Naik',
-  'Pooja Naik',
-  'Raghavendra',
-  'Raghavendra S Palankar',
-  'Renuka D H',
-  'Sharath Nagendra Naik',
-  'Subramanya Ganesh Hegde',
-];
-
-const labelStyle: React.CSSProperties = {
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 4,
-};
-
-const labelText: React.CSSProperties = {
-  fontSize: '12px',
-  fontWeight: 600,
-  color: 'var(--text-secondary)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.04em',
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '8px 12px',
-  borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--border)',
-  background: 'var(--surface)',
-  color: 'var(--text-primary)',
-  fontSize: '13px',
-  outline: 'none',
-  width: '100%',
-  boxSizing: 'border-box',
-};
 
 function InboxUploadPage() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -227,12 +176,16 @@ export default function App() {
   const [dcNumber, setDcNumber]     = useState(() => sessionStorage.getItem('dc_number')     ?? '');
   const [dcDate, setDcDate]         = useState(() => sessionStorage.getItem('dc_date')       ?? '');
   const [supplier, setSupplier]     = useState(() => sessionStorage.getItem('dc_supplier')   ?? '');
-  const [checkedBy, setCheckedBy]   = useState(() => sessionStorage.getItem('dc_checked_by') ?? 'Ganesh Hegde');
+  // No hardcoded fallback name here (there used to be one) — the staff roster
+  // is admin-editable now (see the /staff fetch below), so nothing can be
+  // assumed to always exist on it.
+  const [checkedBy, setCheckedBy]   = useState(() => sessionStorage.getItem('dc_checked_by') ?? '');
   const [extractionModel, setExtractionModel] = useState('google/gemini-3.1-flash-lite');
   const [reasoning, setReasoning] = useState(false);
   const [branch, setBranch] = useState(() => sessionStorage.getItem('dc_branch') ?? 'HOSPET ROAD');
   const [entryMode, setEntryMode] = useState<'excel' | 'type'>(() => (sessionStorage.getItem('dc_entry_mode') as 'excel' | 'type') ?? 'excel');
   const [suppliers, setSuppliers] = useState<string[]>([]);
+  const [staffNames, setStaffNames] = useState<string[]>([]);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
   const [tabId] = useState<string>(() => {
     const existing = sessionStorage.getItem('tab_id');
@@ -256,6 +209,13 @@ export default function App() {
     fetch('/suppliers')
       .then(r => r.json())
       .then(d => setSuppliers(d.suppliers ?? []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch('/staff')
+      .then(r => r.json())
+      .then(d => setStaffNames(d.staff ?? []))
       .catch(() => {});
   }, []);
 
@@ -494,6 +454,11 @@ export default function App() {
     return <InboxUploadPage />;
   }
 
+  // Normalize a trailing slash so /admin and /admin/ both resolve here.
+  if (window.location.pathname.replace(/\/$/, '') === '/admin') {
+    return <AdminPage />;
+  }
+
   return (
     <div
       style={{
@@ -555,6 +520,23 @@ export default function App() {
               Click and Pick
             </p>
           </div>
+          <a
+            href="/admin"
+            style={{
+              marginLeft: 'auto',
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text-secondary)',
+              fontSize: '13px',
+              fontWeight: 600,
+              textDecoration: 'none',
+              flexShrink: 0,
+            }}
+          >
+            Admin
+          </a>
         </div>
       </header>
 
@@ -790,7 +772,7 @@ export default function App() {
             </label>
           </div>
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            Use <strong>3.1 Flash Lite</strong> for smaller DCs &nbsp;·&nbsp; <strong>3 Flash Preview</strong> for larger DCs with reasoning turned on
+            Use <strong>Lite</strong> for smaller DCs &nbsp;·&nbsp; <strong>Lite 2</strong>, <strong>Pro</strong>, or <strong>Pro 2</strong> with reasoning turned on for larger DCs
           </span>
           </div>
 
@@ -893,7 +875,7 @@ export default function App() {
                   onChange={e => setCheckedBy(e.target.value)}
                 >
                   <option value="">— Select staff —</option>
-                  {STAFF_NAMES.map(s => (
+                  {staffNames.map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>

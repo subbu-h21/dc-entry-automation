@@ -1,6 +1,8 @@
+import asyncio
 import io
 import logging
 import os
+import time
 import uuid
 from datetime import datetime
 
@@ -38,6 +40,50 @@ def _infer_photo_type(filename: str) -> str:
         if filename.startswith(f"{photo_type}_"):
             return photo_type
     return "invoice"
+
+
+# Files clicked into a slot are deleted immediately (see the frontend's
+# handleInboxClick), so what accumulates here is only abandoned uploads —
+# mis-taken photos, duplicates, anything nobody followed up on. Sweep those
+# out once a day so they don't pile up on disk indefinitely.
+_CLEANUP_RETENTION_SECONDS = 24 * 3600
+_CLEANUP_INTERVAL_SECONDS = 24 * 3600
+
+
+def _cleanup_stale_inbox_files() -> None:
+    if not os.path.isdir(INBOX_DIR):
+        return
+    cutoff = time.time() - _CLEANUP_RETENTION_SECONDS
+    removed = 0
+    for name in os.listdir(INBOX_DIR):
+        path = os.path.join(INBOX_DIR, name)
+        if not os.path.isfile(path):
+            continue
+        if os.path.getmtime(path) < cutoff:
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError as e:
+                log.warning("Failed to remove stale inbox file %s: %s", name, e)
+    if removed:
+        log.info("Inbox cleanup: removed %d file(s) older than 24h", removed)
+
+
+async def inbox_cleanup_loop() -> None:
+    """Background task: delete inbox files older than 24h, checked every 24h.
+
+    Runs an immediate pass on startup (so files already stale when the
+    backend restarts don't wait a full day), then repeats on the interval.
+    Intended to be started once via main.py's lifespan and cancelled on
+    shutdown.
+    """
+    log.info("Inbox cleanup loop started (retention=24h, interval=24h)")
+    while True:
+        try:
+            _cleanup_stale_inbox_files()
+        except Exception:
+            log.exception("Inbox cleanup pass failed")
+        await asyncio.sleep(_CLEANUP_INTERVAL_SECONDS)
 
 
 def _find_file(image_id: str) -> str | None:

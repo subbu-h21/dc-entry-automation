@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,9 +21,18 @@ from routes.extract import router as extract_router
 from routes.browser import router as browser_router
 from routes.voice import router as voice_router
 from routes.products import router as products_router
-from routes.inbox import router as inbox_router
+from routes.inbox import router as inbox_router, inbox_cleanup_loop
+from routes.admin import router as admin_router
 
-app = FastAPI(title="Pharmacy Bill Extractor")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    cleanup_task = asyncio.create_task(inbox_cleanup_loop())
+    yield
+    cleanup_task.cancel()
+
+
+app = FastAPI(title="Pharmacy Bill Extractor", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -35,6 +46,7 @@ app.include_router(browser_router)
 app.include_router(voice_router)
 app.include_router(products_router)
 app.include_router(inbox_router)
+app.include_router(admin_router)
 
 
 @app.get("/health")

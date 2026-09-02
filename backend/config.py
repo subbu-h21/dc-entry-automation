@@ -25,6 +25,11 @@ ALLOWED_ORIGINS: list[str] = [
 
 DC_PIPELINE_URL: str = os.getenv("DC_PIPELINE_URL", "http://localhost:3002")
 
+# Gates routes/admin.py (staff-list edits, product-catalog replacement) via the
+# X-Admin-Pin header on every /admin/* call — this app has no other auth. Ships
+# with the owner's chosen default; override via .env to rotate it.
+ADMIN_PIN: str = os.getenv("ADMIN_PIN", "2009")
+
 # Per-branch CRM login credentials (shubhadahealth.com), used by routes/browser.py.
 # Must be set in .env — no defaults, since these are real login credentials.
 BRANCH_CREDENTIALS: dict[str, tuple[str, str]] = {
@@ -42,48 +47,50 @@ _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PRODUCT_LIST_PATH: str = os.getenv("PRODUCT_LIST_PATH", os.path.join(_root, "Product_List.xlsx"))
 PRODUCT_LIST_SHEET: str = os.getenv("PRODUCT_LIST_SHEET", "data")
 
+def _load_names_csv(path: str, column: str, label: str) -> list[str]:
+    """Shared loader for a single-column "name list" CSV (supplier_names.csv,
+    staff_names.csv) — read `column`, HTML-unescape + strip each value, drop
+    blanks, sort case-insensitively. `label` is just for the log line."""
+    if not os.path.exists(path):
+        log.warning("%s not found at %s — %s list will be empty", os.path.basename(path), path, label)
+        return []
+    names = []
+    with open(path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            name = _html.unescape(row.get(column, "")).strip()
+            if name:
+                names.append(name)
+    log.info("Loaded %d %s from %s", len(names), label, path)
+    return sorted(names, key=str.upper)
+
+
 _suppliers_csv = os.path.join(_root, "supplier_names.csv")
 
 def _load_suppliers() -> list[str]:
-    if not os.path.exists(_suppliers_csv):
-        log.warning("supplier_names.csv not found at %s — supplier list will be empty", _suppliers_csv)
-        return []
-    names = []
-    with open(_suppliers_csv, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            name = _html.unescape(row.get("Supplier Name", "")).strip()
-            if name:
-                names.append(name)
-    log.info("Loaded %d suppliers from %s", len(names), _suppliers_csv)
-    return sorted(names, key=str.upper)
+    return _load_names_csv(_suppliers_csv, "Supplier Name", "suppliers")
 
 ALL_SUPPLIERS: list[str] = _load_suppliers()
 KNOWN_SUPPLIERS: list[str] = ALL_SUPPLIERS  # backward compat — extract.py uses this
 
-STAFF_NAMES: list[str] = [
-    "Abhishek Seetaram Naik",
-    "Akshata",
-    "Archana Gopal Marathi",
-    "Chaitra G Naik",
-    "Dattatraya V Hegde",
-    "Deepa Manjunatha Gouda",
-    "Fazil Unshalli",
-    "Ganesh Hegde",
-    "Harsha N",
-    "Harshita Suresh Naik",
-    "Keerthana M",
-    "Krishnamoorthy",
-    "Laxmi R Palankar",
-    "Manjunata D Gosavi",
-    "Mohan Gowda",
-    "Narendra",
-    "Netravati Prakash Kothari",
-    "Nivedita M K",
-    "Parashuram T Naik",
-    "Pooja Naik",
-    "Raghavendra",
-    "Raghavendra S Palankar",
-    "Renuka D H",
-    "Sharath Nagendra Naik",
-    "Subramanya Ganesh Hegde",
-]
+# Staff (employee) roster — editable via routes/admin.py, backed by staff_names.csv
+# (mirrors the supplier CSV pattern above exactly). STAFF_NAMES is reassigned in
+# place by reload_staff() after an admin edit, so any code that needs the CURRENT
+# list at call time must read it as `config.STAFF_NAMES` via `import config`
+# (module-attribute lookup) — NOT `from config import STAFF_NAMES`, which binds a
+# name in the importing module's own namespace to whatever object STAFF_NAMES
+# pointed to at import time and will not see a later reassignment here. See
+# routes/voice.py and routes/products.py.
+STAFF_CSV_PATH = os.path.join(_root, "staff_names.csv")
+
+def _load_staff() -> list[str]:
+    return _load_names_csv(STAFF_CSV_PATH, "Staff Name", "staff names")
+
+STAFF_NAMES: list[str] = _load_staff()
+
+def reload_staff() -> list[str]:
+    """Re-read staff_names.csv and rebind the module-level STAFF_NAMES in place.
+    Called by routes/admin.py after an add/remove so the change is live
+    immediately, without a backend restart."""
+    global STAFF_NAMES
+    STAFF_NAMES = _load_staff()
+    return STAFF_NAMES

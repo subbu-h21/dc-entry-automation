@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 
 from rapidfuzz import process, fuzz
 
-from config import ALL_SUPPLIERS, ELEVENLABS_API_KEY, MATCHING_MODEL, STAFF_NAMES
+import config
+from config import ALL_SUPPLIERS, ELEVENLABS_API_KEY, MATCHING_MODEL
 from services.client import get_async_client
 
 logger = logging.getLogger(__name__)
@@ -16,16 +17,22 @@ router = APIRouter(prefix="/voice")
 
 _ELEVENLABS_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 
-_STAFF_UPPER     = [n.upper() for n in STAFF_NAMES]
 _SUPPLIERS_UPPER = [n.upper() for n in ALL_SUPPLIERS]
 
 
 def _match_staff(value: str) -> str:
     if not value:
         return value
-    hit = process.extractOne(value.upper(), _STAFF_UPPER, scorer=fuzz.WRatio)
+    # Read config.STAFF_NAMES fresh each call (not a module-level precompute,
+    # unlike _SUPPLIERS_UPPER above) — the admin page can reassign it at
+    # runtime via config.reload_staff(), and only a live `config.` attribute
+    # lookup sees that; a cached `from config import STAFF_NAMES` binding
+    # would not. Trivial cost — ~25 names, voice commands are infrequent.
+    staff_names = config.STAFF_NAMES
+    staff_upper = [n.upper() for n in staff_names]
+    hit = process.extractOne(value.upper(), staff_upper, scorer=fuzz.WRatio)
     if hit and hit[1] >= 60:
-        return STAFF_NAMES[hit[2]]
+        return staff_names[hit[2]]
     return value
 
 
