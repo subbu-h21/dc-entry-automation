@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from services.openrouter import extract_invoice_data
 from services.product_matcher import match_order
 from services.matcher_instance import get_matcher
-from config import KNOWN_SUPPLIERS
+from services import crm_api, pen_marks
 from rapidfuzz import process, fuzz
 import openai
 
@@ -79,12 +79,19 @@ def _fix_dc_number(dc_number: str) -> str:
     return _NON_ALNUM_RE.sub('', dc_number)
 
 
-def _match_supplier(extracted: str) -> str:
-    """Fuzzy-map an extracted supplier string to the nearest known supplier."""
+async def _match_supplier(extracted: str) -> str:
+    """Fuzzy-map an extracted supplier string to the nearest CRM supplier. If the
+    CRM's list can't be loaded, leave it blank for staff rather than fail the
+    whole extraction."""
     if not extracted:
         return ""
-    hit = process.extractOne(extracted.upper(), KNOWN_SUPPLIERS, scorer=fuzz.WRatio)
-    return hit[0] if hit and hit[1] >= 55 else ""
+    try:
+        names = await crm_api.supplier_names()
+    except crm_api.CrmError as e:
+        log.warning("Supplier match skipped: %s", e.message)
+        return ""
+    hit = process.extractOne(extracted.upper(), [n.upper() for n in names], scorer=fuzz.WRatio)
+    return names[hit[2]] if hit and hit[1] >= 55 else ""
 
 
 ALLOWED_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"}
@@ -178,13 +185,17 @@ async def extract(
                 p["gemini_pick"]      = None
 
         raw_supplier = result.get("supplier_name", "")
-        matched_supplier = _match_supplier(raw_supplier)
+        matched_supplier = await _match_supplier(raw_supplier)
+
+        # Only now, so it can't hold up extraction. It carries on in the background.
+        scan_id = pen_marks.start_scan(image_payloads)
 
         return JSONResponse(content={
             "dc_number":        _fix_dc_number(result.get("dc_number", "")),
             "dc_date":          result.get("dc_date", ""),
             "supplier_name":    matched_supplier,
             "products":         products,
+            "scan_id":          scan_id,
         })
 
     except openai.AuthenticationError:

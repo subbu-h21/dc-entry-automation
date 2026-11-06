@@ -1,10 +1,9 @@
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from rapidfuzz import process, fuzz
 
-import config
-from config import ALL_SUPPLIERS
+from services import crm_api
 from services.matcher_instance import get_matcher
 from services.product_matcher import _normalize, _JUNK_PREFIX_DISPLAY
 
@@ -13,18 +12,19 @@ log = logging.getLogger(__name__)
 
 
 @router.get("/suppliers")
-def get_suppliers():
-    log.info("GET /suppliers — returning %d suppliers", len(ALL_SUPPLIERS))
-    return {"suppliers": ALL_SUPPLIERS}
+async def get_suppliers():
+    try:
+        return {"suppliers": await crm_api.supplier_names()}
+    except crm_api.CrmError as e:
+        raise HTTPException(status_code=502, detail=e.message)
 
 
 @router.get("/staff")
-def get_staff():
-    # Read config.STAFF_NAMES live (not a top-level `from config import
-    # STAFF_NAMES`) so an admin-page edit shows up here immediately — see the
-    # staleness-binding note in config.py and routes/voice.py.
-    log.info("GET /staff — returning %d staff names", len(config.STAFF_NAMES))
-    return {"staff": config.STAFF_NAMES}
+async def get_staff():
+    try:
+        return {"staff": await crm_api.staff_names()}
+    except crm_api.CrmError as e:
+        raise HTTPException(status_code=502, detail=e.message)
 
 
 @router.get("/products/search")

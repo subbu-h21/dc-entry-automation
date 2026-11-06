@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 
 import requests
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -8,8 +9,8 @@ from fastapi.responses import JSONResponse
 
 from rapidfuzz import process, fuzz
 
-import config
-from config import ALL_SUPPLIERS, ELEVENLABS_API_KEY, MATCHING_MODEL
+from config import ELEVENLABS_API_KEY, MATCHING_MODEL
+from services import crm_api
 from services.client import get_async_client
 
 logger = logging.getLogger(__name__)
@@ -17,32 +18,36 @@ router = APIRouter(prefix="/voice")
 
 _ELEVENLABS_URL = "https://api.elevenlabs.io/v1/speech-to-text"
 
-_SUPPLIERS_UPPER = [n.upper() for n in ALL_SUPPLIERS]
+
+def _fuzzy_key(value: str) -> str:
+    """Upper-case with punctuation as spaces. The CRM spells some staff like
+    "Renuka.D.H", and against that a spoken "Renuka D H" otherwise scores
+    lower than a different person entirely."""
+    return re.sub(r"[^A-Z0-9]+", " ", value.upper()).strip()
 
 
-def _match_staff(value: str) -> str:
+def _best_match(value: str, names: list[str]) -> str:
+    hit = process.extractOne(_fuzzy_key(value), [_fuzzy_key(n) for n in names], scorer=fuzz.WRatio)
+    return names[hit[2]] if hit and hit[1] >= 60 else value
+
+
+async def _match_staff(value: str) -> str:
     if not value:
         return value
-    # Read config.STAFF_NAMES fresh each call (not a module-level precompute,
-    # unlike _SUPPLIERS_UPPER above) — the admin page can reassign it at
-    # runtime via config.reload_staff(), and only a live `config.` attribute
-    # lookup sees that; a cached `from config import STAFF_NAMES` binding
-    # would not. Trivial cost — ~25 names, voice commands are infrequent.
-    staff_names = config.STAFF_NAMES
-    staff_upper = [n.upper() for n in staff_names]
-    hit = process.extractOne(value.upper(), staff_upper, scorer=fuzz.WRatio)
-    if hit and hit[1] >= 60:
-        return staff_names[hit[2]]
-    return value
+    try:
+        return _best_match(value, await crm_api.staff_names())
+    except crm_api.CrmError:
+        return value
 
 
-def _match_supplier_voice(value: str) -> str:
+async def _match_supplier_voice(value: str) -> str:
     if not value:
         return value
-    hit = process.extractOne(value.upper(), _SUPPLIERS_UPPER, scorer=fuzz.WRatio)
-    if hit and hit[1] >= 60:
-        return ALL_SUPPLIERS[hit[2]]
-    return value
+    try:
+        return _best_match(value, await crm_api.supplier_names())
+    except crm_api.CrmError:
+        return value
+
 
 _SYSTEM_PROMPT = """\
 You are a voice command parser for a pharmaceutical invoice editing tool.
@@ -181,9 +186,9 @@ async def voice_command(
 
     for u in dc_updates:
         if u.get("field") == "checked_by":
-            u["value"] = _match_staff(u["value"])
+            u["value"] = await _match_staff(u["value"])
         elif u.get("field") == "supplier":
-            u["value"] = _match_supplier_voice(u["value"])
+            u["value"] = await _match_supplier_voice(u["value"])
 
     logger.info("Voice updates: %s | DC updates: %s", updates, dc_updates)
     return {"transcription": transcription, "updates": updates, "dc_updates": dc_updates}

@@ -1,6 +1,6 @@
 # DC Entry Automation
 
-Pharmacy invoice processing tool. Upload a photo of a delivery note → AI extracts product rows → fuzzy-matches against your CRM catalog → fill in the DC Entry web form automatically.
+Pharmacy invoice processing tool. Upload a photo of a delivery note → AI extracts product rows → fuzzy-matches against your CRM catalog → checks and saves the DC in the CRM through its API.
 
 ## Stack
 
@@ -9,7 +9,7 @@ Pharmacy invoice processing tool. Upload a photo of a delivery note → AI extra
 | Frontend | React + Vite + TypeScript |
 | Backend | Python + FastAPI + Uvicorn |
 | AI | Gemini via OpenRouter |
-| Browser automation | Playwright |
+| CRM | DC Inward API |
 
 ---
 
@@ -37,7 +37,6 @@ Double-click **`setup.bat`** in the project folder.
 This will automatically:
 - Create the Python virtual environment
 - Install all backend Python dependencies
-- Download the Playwright browser (Chromium)
 - Install all frontend Node dependencies
 - Create `backend\.env` from the template
 
@@ -51,19 +50,22 @@ ELEVENLABS_API_KEY=...
 PORT=3001
 ALLOWED_ORIGINS=http://localhost:5173
 DC_PIPELINE_URL=http://localhost:3002
-HOSPET_ROAD_USERNAME=...
-HOSPET_ROAD_PASSWORD=...
-SHIVAJI_CHOWK_USERNAME=...
-SHIVAJI_CHOWK_PASSWORD=...
+CRM_API_BASE_URL=http://app.shubhadahealth.com/api
+CRM_CLIENT_ID=...
+CRM_CLIENT_SECRET=...
+CRM_DEFAULT_EMPLOYEE_ID=386
 ADMIN_PIN=2009
 ```
 
 > Get an OpenRouter key at https://openrouter.ai/keys
 
-The four `*_USERNAME`/`*_PASSWORD` values are the CRM (`shubhadahealth.com`) login for
-each branch — ask whoever manages that system if you don't have them. **Launch
-Browser** (auto-filling the DC form) won't be able to log in without these set; every
-other feature works fine without them.
+The `CRM_*` values connect this app to the CRM's DC Inward API. **Saving a DC raises
+stock in whichever CRM `CRM_API_BASE_URL` points at**, and it has no default on
+purpose. `app.shubhadahealth.com` is the test server. The client ID and secret come
+from the CRM's API Clients screen, and must stay in this file on the server.
+`CRM_DEFAULT_EMPLOYEE_ID` is who a DC shows as Created By when the Checked By person
+isn't set up for that branch in the CRM. Without these settings the Supplier and
+Checked By lists stay empty and DCs can't be saved.
 
 `ADMIN_PIN` gates the **Admin** page (see below) — ships working with the default
 shown above; change it here to rotate it.
@@ -106,23 +108,24 @@ that's only for day-to-day development (see `CLAUDE.md`).
    **Reasoning** enabled for larger or multi-page ones.
 3. Click **Extract Products**
 4. Review and edit the extracted table
-5. Click **Launch Browser** — this opens a visible Chromium window logged into
-   the CRM with the DC form filled in. Review it there and click the CRM's own
-   **Save** button to save the entry (there is no separate in-app save step);
-   the app detects the save and credits it on the pharmacy's Stage 3 leaderboard.
+5. Click **Check DC**. Nothing is saved yet: the CRM checks the DC and lists any
+   problems.
+   - **Not allowed:** fix the value in the table and check again. If the value
+     really is right, click **Leave out** and add that row on the CRM screen later.
+   - **Please confirm:** a person must tick each question.
+6. Click **Save to CRM**. Stock goes up immediately, the reference is shown, and
+   the save is credited on the pharmacy's Stage 3 leaderboard. A saved DC can only
+   be changed on the CRM's DC Inward screen.
 
 ---
 
 ## Admin page
 
 Click **Admin** in the header (or go to `/admin` directly) to reach a PIN-gated
-page (default PIN `2009`, see `ADMIN_PIN` above) for two things the shop owner
-manages directly, without editing any code:
+page (default PIN `2009`, see `ADMIN_PIN` above) where the shop owner can replace
+the product catalog without editing any code. Suppliers and staff are managed in
+the CRM, and this app reads them from there.
 
-- **Employees** — add or remove names from the staff roster. This is the same
-  list used by the "Checked By" dropdown and by voice-command matching
-  ("checked by Ganesh" → the closest staff name) — an edit here takes effect
-  immediately, no restart needed.
 - **Product Catalog** — upload a replacement `.xlsx` file for the product
   catalog used for matching. It's validated (right sheet, right columns)
   *before* anything is replaced — an invalid file is rejected with a clear
@@ -150,13 +153,15 @@ dc-entry-automation/
 │   ├── .env.example             # Copy this to .env and fill in keys
 │   ├── routes/
 │   │   ├── extract.py           # POST /extract — image(s) → product rows
-│   │   ├── browser.py           # POST /launch-browser — Playwright DC fill
+│   │   ├── crm.py               # POST /crm/dc/check, /crm/dc/save — send the DC to the CRM
 │   │   ├── voice.py             # POST /voice/command — voice corrections
 │   │   ├── products.py          # GET /suppliers, GET /staff, GET /products/search
 │   │   ├── inbox.py             # GET/POST /inbox/* — phone uploads + dc_pipeline photo import
-│   │   └── admin.py             # PIN-gated: staff add/remove, product-catalog upload
+│   │   └── admin.py             # PIN-gated: product-catalog upload
 │   └── services/
+│       ├── crm_api.py           # All calls to the CRM's DC Inward API
 │       ├── openrouter.py        # Gemini extraction via OpenRouter
+│       ├── pen_marks.py         # Reads red pen marks, reports supplier mistakes to dc_pipeline
 │       ├── product_matcher.py   # Two-stage fuzzy SKU matching
 │       ├── client.py            # OpenAI SDK clients → OpenRouter
 │       └── matcher_instance.py  # Singleton matcher loaded from Excel
@@ -167,10 +172,11 @@ dc-entry-automation/
 │   │   └── components/
 │   │       ├── ResultsTable.tsx # Editable table + voice UI
 │   │       ├── ImageUpload.tsx  # Drag-and-drop upload
-│   │       ├── AdminPage.tsx    # PIN-gated staff/catalog admin page
+│   │       ├── DcSubmitPanel.tsx # Check, confirm and save to the CRM
+│   │       ├── AdminPage.tsx    # PIN-gated catalog admin page
 │   │       └── icons.tsx        # SVG icons
-│   └── vite.config.ts           # Proxy: /extract, /launch-browser, /voice, /products,
-│                                 #   /suppliers, /staff, /screenshot, /inbox, /admin → :3001
+│   └── vite.config.ts           # Proxy: /extract, /crm, /voice, /products,
+│                                 #   /suppliers, /staff, /inbox, /admin → :3001
 ├── setup.bat                    # First-time setup script
 └── start.bat                    # Build frontend, launch backend, open browser
 ```

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import ImageUpload from './components/ImageUpload';
-import ResultsTable, { Product, ResolvedProduct } from './components/ResultsTable';
+import ResultsTable, { Product } from './components/ResultsTable';
 import AdminPage from './components/AdminPage';
 import { labelStyle, labelText, inputStyle } from './styles';
 import {
@@ -17,7 +17,6 @@ import {
 } from './components/icons';
 
 type Status = 'idle' | 'loading' | 'success' | 'error';
-type LaunchStatus = 'idle' | 'loading' | 'open';
 type InboxItem = { id: string; filename: string; uploaded_at: string; thumbnail_url: string; photo_type: string };
 
 function formatInboxTime(iso: string): string {
@@ -172,7 +171,6 @@ export default function App() {
     try { return JSON.parse(sessionStorage.getItem('dc_products') || '[]').length > 0 ? 'success' : 'idle'; } catch { return 'idle'; }
   });
   const [errorMsg, setErrorMsg] = useState('');
-  const [launchStatus, setLaunchStatus] = useState<LaunchStatus>('idle');
   const [dcNumber, setDcNumber]     = useState(() => sessionStorage.getItem('dc_number')     ?? '');
   const [dcDate, setDcDate]         = useState(() => sessionStorage.getItem('dc_date')       ?? '');
   const [supplier, setSupplier]     = useState(() => sessionStorage.getItem('dc_supplier')   ?? '');
@@ -180,23 +178,13 @@ export default function App() {
   // is admin-editable now (see the /staff fetch below), so nothing can be
   // assumed to always exist on it.
   const [checkedBy, setCheckedBy]   = useState(() => sessionStorage.getItem('dc_checked_by') ?? '');
+  const [scanId, setScanId]         = useState(() => sessionStorage.getItem('dc_scan_id') ?? '');
   const [extractionModel, setExtractionModel] = useState('google/gemini-3.1-flash-lite');
   const [reasoning, setReasoning] = useState(false);
   const [branch, setBranch] = useState(() => sessionStorage.getItem('dc_branch') ?? 'HOSPET ROAD');
-  const [entryMode, setEntryMode] = useState<'excel' | 'type'>(() => (sessionStorage.getItem('dc_entry_mode') as 'excel' | 'type') ?? 'excel');
   const [suppliers, setSuppliers] = useState<string[]>([]);
   const [staffNames, setStaffNames] = useState<string[]>([]);
-  const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
-  const [tabId] = useState<string>(() => {
-    const existing = sessionStorage.getItem('tab_id');
-    if (existing) return existing;
-    const id = typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : Array.from(crypto.getRandomValues(new Uint8Array(16)))
-          .map(b => b.toString(16).padStart(2, '0')).join('');
-    sessionStorage.setItem('tab_id', id);
-    return id;
-  });
+  const [listsError, setListsError] = useState('');
   const [inboxItems, setInboxItems] = useState<InboxItem[]>([]);
   const inboxInputRef = useRef<HTMLInputElement>(null);
   const [pipelineSuppliers, setPipelineSuppliers] = useState<{ id: number; name: string }[]>([]);
@@ -205,18 +193,24 @@ export default function App() {
   const [pipelineFetching, setPipelineFetching] = useState(false);
   const [pipelineFetchError, setPipelineFetchError] = useState('');
 
+  // Both lists come from the CRM, so without it the dropdowns would just be
+  // empty: say so instead.
   useEffect(() => {
-    fetch('/suppliers')
-      .then(r => r.json())
-      .then(d => setSuppliers(d.suppliers ?? []))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    fetch('/staff')
-      .then(r => r.json())
-      .then(d => setStaffNames(d.staff ?? []))
-      .catch(() => {});
+    const load = async (url: string, key: string, set: (names: string[]) => void) => {
+      let problem = '';
+      try {
+        const res = await fetch(url);
+        const data = await res.json().catch(() => null);
+        if (res.ok && data) {
+          set(data[key] ?? []);
+          return;
+        }
+        if (typeof data?.detail === 'string') problem = data.detail;
+      } catch { /* no answer at all */ }
+      setListsError(problem || "Couldn't load the supplier and staff lists from the CRM.");
+    };
+    load('/suppliers', 'suppliers', setSuppliers);
+    load('/staff', 'staff', setStaffNames);
   }, []);
 
   useEffect(() => {
@@ -239,8 +233,8 @@ export default function App() {
   useEffect(() => { sessionStorage.setItem('dc_date',       dcDate); },      [dcDate]);
   useEffect(() => { sessionStorage.setItem('dc_supplier',   supplier); },    [supplier]);
   useEffect(() => { sessionStorage.setItem('dc_checked_by', checkedBy); },   [checkedBy]);
+  useEffect(() => { sessionStorage.setItem('dc_scan_id',    scanId); },      [scanId]);
   useEffect(() => { sessionStorage.setItem('dc_branch',     branch); },      [branch]);
-  useEffect(() => { sessionStorage.setItem('dc_entry_mode', entryMode); },  [entryMode]);
 
   // Poll inbox every 10 seconds
   useEffect(() => {
@@ -255,14 +249,6 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Restore screenshot on page load using this tab's persistent ID
-  useEffect(() => {
-    fetch(`/screenshot/${tabId}`)
-      .then(r => r.ok ? r.blob() : null)
-      .then(blob => { if (blob) setScreenshotUrl(URL.createObjectURL(blob)); })
-      .catch(() => {});
-  }, []);
-
   const selectedModelMeta = EXTRACTION_MODELS.find(m => m.value === extractionModel);
   const reasoningSupported = selectedModelMeta?.supportsReasoning ?? false;
 
@@ -270,24 +256,25 @@ export default function App() {
   // starting a fresh entry (both invoice page slots were empty beforehand),
   // not when adding a second page to an entry already in progress.
   const resetEntryState = () => {
-    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier'].forEach(k => sessionStorage.removeItem(k));
+    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier', 'dc_scan_id'].forEach(k => sessionStorage.removeItem(k));
     setProducts([]);
+    setScanId('');
     setStatus('idle');
     setErrorMsg('');
     setDcNumber('');
     setDcDate('');
     setSupplier('');
-    setScreenshotUrl(null);
-    setLaunchStatus('idle');
   };
 
   const handleInvoiceFilesChange = useCallback((files: File[]) => {
     if (invoiceFiles.length === 0 && files.length > 0) resetEntryState();
     setInvoiceFiles(files);
+    setScanId(''); // the scan belongs to the pages that were extracted, not these
   }, [invoiceFiles]);
 
   const handleInvoiceRemove = useCallback((index: number) => {
     setInvoiceFiles(prev => prev.filter((_, i) => i !== index));
+    setScanId('');
   }, []);
 
   const handleProductImageSelect = useCallback((selected: File) => {
@@ -304,6 +291,7 @@ export default function App() {
     setStatus('loading');
     setErrorMsg('');
     setProducts([]);
+    setScanId('');
 
     const formData = new FormData();
     imageFiles.forEach(f => formData.append('images', f));
@@ -320,6 +308,7 @@ export default function App() {
       }
 
       setProducts(data.products ?? []);
+      setScanId(data.scan_id ?? '');
       if (data.dc_number)     setDcNumber(data.dc_number);
       if (data.dc_date)       setDcDate(data.dc_date);
       if (data.supplier_name) setSupplier(data.supplier_name);
@@ -406,46 +395,6 @@ export default function App() {
       setInboxItems(prev => prev.filter(i => i.id !== item.id));
     } catch {}
   };
-
-  const handleLaunchBrowser = async (resolvedProducts: ResolvedProduct[]) => {
-    setLaunchStatus('loading');
-    setScreenshotUrl(null);
-    try {
-      const res = await fetch('/launch-browser', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tab_id: tabId,
-          dc_number: dcNumber,
-          dc_date: dcDate,
-          supplier,
-          checked_by: checkedBy,
-          branch,
-          products: resolvedProducts,
-          entry_mode: entryMode,
-        }),
-      });
-      await res.json();
-      setLaunchStatus('open');
-    } catch {
-      setLaunchStatus('idle');
-    }
-  };
-
-  useEffect(() => {
-    if (launchStatus !== 'open') return;
-    const interval = setInterval(async () => {
-      try {
-        const r = await fetch(`/screenshot/${tabId}`);
-        if (r.ok) {
-          const blob = await r.blob();
-          setScreenshotUrl(URL.createObjectURL(blob));
-          clearInterval(interval);
-        }
-      } catch {}
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [launchStatus, tabId]);
 
   const canExtract = invoiceFiles.length > 0 && status !== 'loading';
   const pipelineInputsValid = !!pipelineDcNumber.trim() && pipelineSupplierId !== null;
@@ -838,6 +787,9 @@ export default function App() {
         {/* Results */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <SectionCard title="DC Details" icon={<DCDetailsIcon />}>
+            {listsError && (
+              <p style={{ fontSize: '13px', color: 'var(--error)', marginBottom: 12 }}>{listsError}</p>
+            )}
             <div className="dc-details-grid">
               <label style={labelStyle}>
                 <span style={labelText}>DC Number</span>
@@ -891,17 +843,6 @@ export default function App() {
                   <option value="SHIVAJI CHOWK">SHIVAJI CHOWK</option>
                 </select>
               </label>
-              <label style={labelStyle}>
-                <span style={labelText}>Entry Mode</span>
-                <select
-                  style={inputStyle}
-                  value={entryMode}
-                  onChange={e => setEntryMode(e.target.value as 'excel' | 'type')}
-                >
-                  <option value="excel">Excel Import (fast)</option>
-                  <option value="type">Type row by row (slow)</option>
-                </select>
-              </label>
             </div>
           </SectionCard>
 
@@ -920,8 +861,7 @@ export default function App() {
             {status === 'success' && (
               <ResultsTable
                 products={products}
-                onOpenDCEntry={handleLaunchBrowser}
-                launchStatus={launchStatus}
+                dcDetails={{ dc_number: dcNumber, dc_date: dcDate, supplier, checked_by: checkedBy, branch, scan_id: scanId }}
                 onDCUpdate={(field, value) => {
                   if (field === 'dc_number')  setDcNumber(value);
                   if (field === 'dc_date')    setDcDate(value);
@@ -932,15 +872,6 @@ export default function App() {
             )}
           </SectionCard>
 
-          {screenshotUrl && (
-            <SectionCard title="DC Entry Screenshot" icon={<TableIcon />}>
-              <img
-                src={screenshotUrl}
-                alt="DC entry screenshot"
-                style={{ width: '100%', borderRadius: 'var(--radius-sm)', display: 'block' }}
-              />
-            </SectionCard>
-          )}
         </div>
       </main>
 

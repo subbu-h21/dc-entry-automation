@@ -1,8 +1,7 @@
-import { useState, useEffect, useCallback, FormEvent } from 'react';
+import { useState, useCallback, FormEvent } from 'react';
 import { labelStyle, labelText, inputStyle } from '../styles';
 
-// PIN-gated admin page: employee roster (add/remove) + product-catalog
-// (.xlsx) upload. Reached at /admin (see the route branch in App.tsx).
+// PIN-gated admin page: product-catalog (.xlsx) upload. Reached at /admin (see the route branch in App.tsx).
 //
 // The PIN is enforced server-side on every /admin/* call (routes/admin.py),
 // via the X-Admin-Pin header set on each request below — this component's
@@ -94,26 +93,10 @@ export default function AdminPage() {
   const [verifying, setVerifying] = useState(false);
   const [pinError, setPinError] = useState('');
 
-  const [staff, setStaff] = useState<string[]>([]);
-  const [newStaffName, setNewStaffName] = useState('');
-  const [staffBusy, setStaffBusy] = useState(false);
-  const [staffError, setStaffError] = useState('');
-
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ families: number; products: number } | null>(null);
   const [uploadError, setUploadError] = useState('');
-
-  const loadStaff = useCallback(() => {
-    fetch('/staff')
-      .then(r => r.json())
-      .then(d => setStaff(d.staff ?? []))
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (unlocked) loadStaff();
-  }, [unlocked, loadStaff]);
 
   // Any 401 from an authenticated call means the PIN is no longer valid
   // (e.g. rotated in .env mid-session) — drop back to the locked screen
@@ -146,54 +129,6 @@ export default function AdminPage() {
       setPinError('Could not reach the server. Try again.');
     } finally {
       setVerifying(false);
-    }
-  };
-
-  const addStaff = async () => {
-    const name = newStaffName.trim();
-    if (!name) return;
-    setStaffBusy(true);
-    setStaffError('');
-    try {
-      const res = await fetch('/admin/staff', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Admin-Pin': adminPin },
-        body: JSON.stringify({ name }),
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const data = await res.json();
-      if (!res.ok) {
-        setStaffError(data.detail ?? 'Could not add employee');
-        return;
-      }
-      setStaff(data.staff ?? []);
-      setNewStaffName('');
-    } catch {
-      setStaffError('Could not reach the server.');
-    } finally {
-      setStaffBusy(false);
-    }
-  };
-
-  const removeStaff = async (name: string) => {
-    setStaffBusy(true);
-    setStaffError('');
-    try {
-      const res = await fetch(`/admin/staff/${encodeURIComponent(name)}`, {
-        method: 'DELETE',
-        headers: { 'X-Admin-Pin': adminPin },
-      });
-      if (res.status === 401) return handleUnauthorized();
-      const data = await res.json();
-      if (!res.ok) {
-        setStaffError(data.detail ?? 'Could not remove employee');
-        return;
-      }
-      setStaff(data.staff ?? []);
-    } catch {
-      setStaffError('Could not reach the server.');
-    } finally {
-      setStaffBusy(false);
     }
   };
 
@@ -272,66 +207,6 @@ export default function AdminPage() {
     <div style={pageWrap}>
       <div style={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 20 }}>
         <a href="/" style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>← Back to Home</a>
-
-        <Section title="Employees">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto' }}>
-            {staff.length === 0 && (
-              <span style={{ fontSize: '13px', color: 'var(--text-muted)' }}>No staff yet.</span>
-            )}
-            {staff.map(name => (
-              <div
-                key={name}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '6px 10px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: 'var(--surface-2)',
-                }}
-              >
-                <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>{name}</span>
-                <button
-                  onClick={() => removeStaff(name)}
-                  disabled={staffBusy}
-                  title={`Remove ${name}`}
-                  style={{
-                    border: 'none',
-                    background: 'none',
-                    color: 'var(--text-muted)',
-                    cursor: staffBusy ? 'not-allowed' : 'pointer',
-                    fontSize: '15px',
-                    lineHeight: 1,
-                    padding: '2px 6px',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              type="text"
-              placeholder="New employee name"
-              value={newStaffName}
-              onChange={e => setNewStaffName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addStaff(); }}
-              disabled={staffBusy}
-              style={{ ...inputStyle, flex: 1 }}
-            />
-            <button
-              onClick={addStaff}
-              disabled={staffBusy || !newStaffName.trim()}
-              style={buttonStyle(!staffBusy && !!newStaffName.trim())}
-            >
-              Add
-            </button>
-          </div>
-
-          {staffError && <ErrorBanner message={staffError} />}
-        </Section>
 
         <Section title="Product Catalog">
           <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>

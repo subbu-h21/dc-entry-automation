@@ -1,15 +1,12 @@
-import csv
 import logging
 import os
 import shutil
 import tempfile
 import threading
 
-import config
-from config import ADMIN_PIN, PRODUCT_LIST_PATH, PRODUCT_LIST_SHEET, STAFF_CSV_PATH
+from config import ADMIN_PIN, PRODUCT_LIST_PATH, PRODUCT_LIST_SHEET
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from openpyxl.utils.exceptions import InvalidFileException
-from pydantic import BaseModel
 
 from services.matcher_instance import replace_catalog_file
 from services.product_matcher import ProductMatcher
@@ -17,16 +14,9 @@ from services.product_matcher import ProductMatcher
 log = logging.getLogger(__name__)
 
 MAX_UPLOAD_SIZE = 20 * 1024 * 1024  # a full catalog, not a photo — mirrors inbox.py's MAX_SIZE pattern but larger
-MAX_NAME_LENGTH = 100
 
-# Serializes staff-CSV and product-catalog writes. FastAPI runs sync `def`
-# routes in a thread pool, so two requests CAN genuinely interleave — most
-# realistically a double-click firing two "Add" calls before the button
-# disables. Without this, a classic read-modify-write lost-update is possible:
-# both requests read the same starting list, each appends its own name, and
-# whichever writes last silently erases the other's addition. One coarse lock
-# for all admin mutations is cheap and sufficient — this is a low-traffic,
-# single-operator admin page, not a concurrent-write-heavy system.
+# Serializes product-catalog writes. FastAPI can run requests concurrently, and
+# two uploads at once would race on the backup and the swap.
 _write_lock = threading.Lock()
 
 
@@ -44,53 +34,6 @@ router = APIRouter(prefix="/admin", dependencies=[Depends(_require_admin_pin)])
 @router.post("/verify-pin")
 def verify_pin():
     return {"ok": True}
-
-
-# ── Staff roster ──────────────────────────────────────────────
-
-class AddStaffRequest(BaseModel):
-    name: str
-
-
-def _write_staff_csv(names: list[str]) -> None:
-    with open(STAFF_CSV_PATH, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Staff Name"])
-        for n in sorted(names, key=str.upper):
-            writer.writerow([n])
-
-
-@router.post("/staff")
-def add_staff(body: AddStaffRequest):
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="Name cannot be empty")
-    if len(name) > MAX_NAME_LENGTH:
-        raise HTTPException(status_code=400, detail=f"Name is too long (max {MAX_NAME_LENGTH} characters)")
-
-    with _write_lock:
-        existing = config.STAFF_NAMES
-        if any(n.upper() == name.upper() for n in existing):
-            raise HTTPException(status_code=409, detail=f'"{name}" is already in the staff list')
-        _write_staff_csv(existing + [name])
-        updated = config.reload_staff()
-
-    log.info("Admin: added staff %r (%d total)", name, len(updated))
-    return {"staff": updated}
-
-
-@router.delete("/staff/{name}")
-def remove_staff(name: str):
-    with _write_lock:
-        existing = config.STAFF_NAMES
-        remaining = [n for n in existing if n.upper() != name.upper()]
-        if len(remaining) == len(existing):
-            raise HTTPException(status_code=404, detail=f'"{name}" not found in the staff list')
-        _write_staff_csv(remaining)
-        updated = config.reload_staff()
-
-    log.info("Admin: removed staff %r (%d remaining)", name, len(updated))
-    return {"staff": updated}
 
 
 # ── Product catalog ───────────────────────────────────────────

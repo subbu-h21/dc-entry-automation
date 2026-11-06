@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, Fragment } from 'react';
 import * as XLSX from 'xlsx';
-import { AlertIcon, CopyIcon, BrowserIcon, CheckSmIcon, MiniSpinner, MiniSpinnerDark, MicIcon, StopRecIcon } from './icons';
+import { AlertIcon, CopyIcon, MiniSpinnerDark, MicIcon, StopRecIcon } from './icons';
+import { useDcSubmit, DcDetails, DcRowInput } from './DcSubmitPanel';
 
 export interface Candidate {
   index: number;
@@ -35,18 +36,6 @@ interface Override {
   pack: string | null;
 }
 
-export interface ResolvedProduct {
-  matched_product: string;
-  batch_number: string;
-  expiry: string;
-  old_mrp: number;
-  mrp: number;
-  rate: number;
-  quantity: number;
-  free: number;
-  disc_percent: number;
-}
-
 interface VoiceUpdate {
   row: number;
   field: string;
@@ -73,14 +62,13 @@ const PULSE = `@keyframes vcPulse { 0%,100%{opacity:1;transform:scale(1)} 50%{op
 
 interface Props {
   products: Product[];
-  onOpenDCEntry: (resolved: ResolvedProduct[]) => void;
-  launchStatus: 'idle' | 'loading' | 'open';
+  dcDetails: DcDetails;
   onDCUpdate: (field: string, value: string) => void;
 }
 
 type ViewMode = 'auto' | 'table' | 'cards';
 
-export default function ResultsTable({ products, onOpenDCEntry, launchStatus, onDCUpdate }: Props) {
+export default function ResultsTable({ products, dcDetails, onDCUpdate }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try { return (localStorage.getItem('dc_view_mode') as ViewMode) || 'table'; } catch { return 'table'; }
   });
@@ -285,6 +273,21 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
 
   const dismissVoice = () => { setVoiceTranscript(''); setVoiceUpdates([]); setVoiceDCUpdates([]); setVoiceError(''); };
 
+  const dcRows: DcRowInput[] = products.map((_, i) => ({
+    row: i,
+    product_name: resolvedField(i, 'product_name'),
+    matched_product: resolvedProduct(i)?.product ?? null,  // null = "Not in catalog", never sent
+    matched_pack: resolvedProduct(i)?.pack ?? null,
+    batch_number: resolvedField(i, 'batch_number'),
+    expiry: resolvedField(i, 'expiry'),
+    mrp: resolvedField(i, 'mrp'),
+    rate: resolvedField(i, 'rate'),
+    quantity: resolvedField(i, 'quantity'),
+    free: resolvedField(i, 'free'),
+    disc_percent: resolvedField(i, 'disc_percent'),
+  }));
+  const dcSubmit = useDcSubmit(dcRows, dcDetails);
+
   if (products.length === 0) {
     return (
       <EmptyState
@@ -358,42 +361,10 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
             }} />
           )}
         </button>
-        <button
-          onClick={() => {
-            const resolved: ResolvedProduct[] = products
-              .map((_, i) => {
-                const rp = resolvedProduct(i);
-                if (!rp?.product) return null;  // "Not in catalog" — skip entirely
-                return {
-                  matched_product: rp.product,
-                  batch_number: resolvedField(i, 'batch_number'),
-                  expiry: resolvedField(i, 'expiry'),
-                  old_mrp: resolvedField(i, 'old_mrp'),
-                  mrp: resolvedField(i, 'mrp'),
-                  rate: resolvedField(i, 'rate'),
-                  quantity: resolvedField(i, 'quantity'),
-                  free: resolvedField(i, 'free'),
-                  disc_percent: resolvedField(i, 'disc_percent'),
-                };
-              })
-              .filter((r): r is ResolvedProduct => r !== null);
-            onOpenDCEntry(resolved);
-          }}
-          disabled={launchStatus === 'loading'}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            padding: '7px 14px', borderRadius: 'var(--radius-sm)', border: 'none',
-            background: launchStatus === 'open' ? 'var(--success)' : 'linear-gradient(135deg,#2563eb,#1d4ed8)',
-            color: '#fff', fontSize: '13px', fontWeight: 600,
-            cursor: launchStatus === 'loading' ? 'not-allowed' : 'pointer',
-            opacity: launchStatus === 'loading' ? 0.7 : 1,
-            boxShadow: '0 2px 8px rgba(37,99,235,0.3)', transition: 'all 0.2s',
-          }}
-        >
-          {launchStatus === 'loading' ? <MiniSpinner /> : launchStatus === 'open' ? <CheckSmIcon color="#fff" /> : <BrowserIcon />}
-          {launchStatus === 'loading' ? 'Launching…' : launchStatus === 'open' ? 'Browser open' : 'Open DC Entry'}
-        </button>
+        {dcSubmit.button}
       </div>
+
+      {dcSubmit.panel}
 
       {/* Voice result panel */}
       {(voiceTranscript || voiceUpdates.length > 0 || voiceDCUpdates.length > 0 || voiceError) && (
@@ -467,6 +438,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
             <thead>
               <tr style={{ background: 'var(--surface-2)' }}>
                 <th style={th}>#</th>
+                <th style={{ ...th, minWidth: 60 }}>Leave out</th>
                 {hasMatching && (
                   <>
                     <th style={{ ...th, textAlign: 'left', minWidth: 240 }}>Matched CRM Product</th>
@@ -500,9 +472,11 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                       style={{
                         background: highlightedRows.has(idx) ? '#dcfce7' : isOpen ? 'var(--accent-light)' : idx % 2 === 0 ? 'var(--surface)' : 'var(--surface-2)',
                         transition: 'background 0.15s',
+                        opacity: dcSubmit.isLeftOut(idx) ? 0.5 : 1,
                       }}
                     >
                       <td style={{ ...td, textAlign: 'center', color: 'var(--text-muted)', fontWeight: 500 }}>{idx + 1}</td>
+                      <td style={{ ...td, textAlign: 'center' }}>{dcSubmit.leaveOutBox(idx)}</td>
 
                       {hasMatching && (
                         <>
@@ -645,7 +619,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                     {/* ── Inline candidate picker ── */}
                     {isOpen && (
                       <tr>
-                        <td colSpan={hasMatching ? 14 : 10} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
+                        <td colSpan={hasMatching ? 15 : 11} style={{ padding: 0, borderBottom: '2px solid var(--accent)' }}>
                           <CandidatePicker
                             product={p}
                             current={pending[idx] ?? null}
@@ -663,7 +637,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
             {hasMatching && (
               <tfoot>
                 <tr style={{ background: 'var(--surface-2)', borderTop: '2px solid var(--border)' }}>
-                  <td colSpan={13} style={{ ...td, textAlign: 'right', fontWeight: 600, fontSize: '12px', color: 'var(--text-secondary)', borderBottom: 'none' }}>
+                  <td colSpan={14} style={{ ...td, textAlign: 'right', fontWeight: 600, fontSize: '12px', color: 'var(--text-secondary)', borderBottom: 'none' }}>
                     Total Value
                   </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: 'var(--text-primary)', borderBottom: 'none' }}>
@@ -694,6 +668,7 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                   border: `1px solid ${isOpen ? 'var(--accent)' : 'var(--border)'}`,
                   borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)',
                   padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10,
+                  opacity: dcSubmit.isLeftOut(idx) ? 0.5 : 1,
                 }}
               >
                 {/* Header: # + CRM match + Change */}
@@ -701,6 +676,10 @@ export default function ResultsTable({ products, onOpenDCEntry, launchStatus, on
                   <span style={{ color: 'var(--text-muted)', fontWeight: 700, fontSize: '12px', flexShrink: 0, marginTop: 2 }}>
                     #{idx + 1}
                   </span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '11px', color: 'var(--text-muted)', flexShrink: 0, marginTop: 2, cursor: 'pointer' }}>
+                    {dcSubmit.leaveOutBox(idx)}
+                    Leave out
+                  </label>
                   <div
                     style={{ flex: 1, minWidth: 0, cursor: hasMatching ? 'pointer' : 'default' }}
                     onClick={() => hasMatching && toggleHighlight(idx)}
@@ -892,7 +871,7 @@ function CandidatePicker({
     pack: string,
     tags: React.ReactNode,
   ) => {
-    const selected = current?.product === productName;
+    const selected = current?.product === productName && (current?.pack ?? '') === pack;  // packs of one name are separate products
     return (
       <label
         key={key}

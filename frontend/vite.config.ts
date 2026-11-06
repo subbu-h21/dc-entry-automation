@@ -9,11 +9,10 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/extract':        { target: 'http://localhost:3001', changeOrigin: true },
-      '/launch-browser': { target: 'http://localhost:3001', changeOrigin: true },
+      '/crm':            { target: 'http://localhost:3001', changeOrigin: true },
       '/voice':          { target: 'http://localhost:3001', changeOrigin: true },
       '/products':       { target: 'http://localhost:3001', changeOrigin: true },
       '/suppliers':      { target: 'http://localhost:3001', changeOrigin: true },
-      '/screenshot':     { target: 'http://localhost:3001', changeOrigin: true },
       '^/inbox(/|$)':    { target: 'http://localhost:3001', changeOrigin: true },
       '/staff':          { target: 'http://localhost:3001', changeOrigin: true },
       // Trailing-slash regex, not a plain '/admin' prefix: bare /admin is

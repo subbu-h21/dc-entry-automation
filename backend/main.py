@@ -18,7 +18,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from routes.extract import router as extract_router
-from routes.browser import router as browser_router
+from routes.crm import router as crm_router
 from routes.voice import router as voice_router
 from routes.products import router as products_router
 from routes.inbox import router as inbox_router, inbox_cleanup_loop
@@ -42,7 +42,7 @@ app.add_middleware(
 )
 
 app.include_router(extract_router)
-app.include_router(browser_router)
+app.include_router(crm_router)
 app.include_router(voice_router)
 app.include_router(products_router)
 app.include_router(inbox_router)
