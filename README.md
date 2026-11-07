@@ -8,7 +8,7 @@ Pharmacy invoice processing tool. Upload a photo of a delivery note → AI extra
 |---|---|
 | Frontend | React + Vite + TypeScript |
 | Backend | Python + FastAPI + Uvicorn |
-| AI | Gemini via OpenRouter |
+| AI | Claude for reading DCs, Gemini via OpenRouter for the rest |
 | CRM | DC Inward API |
 
 ---
@@ -47,6 +47,7 @@ Open `backend\.env` and add your values:
 ```env
 OPENROUTER_API_KEY=sk-or-v1-...
 ELEVENLABS_API_KEY=...
+ANTHROPIC_KEY=...
 PORT=3001
 ALLOWED_ORIGINS=http://localhost:5173
 DC_PIPELINE_URL=http://localhost:3002
@@ -58,6 +59,12 @@ ADMIN_PIN=2009
 ```
 
 > Get an OpenRouter key at https://openrouter.ai/keys
+
+`ANTHROPIC_KEY` is for Claude, which reads the DC photos on the **Lite** and **Pro**
+models. Create it at https://platform.claude.com/settings/keys in the organisation
+that holds your monthly API credit, because a key from another organisation has no
+credit to spend. If it's blank, or Claude fails for any reason, those models quietly
+use Gemini through OpenRouter instead, and only the backend log says so.
 
 The `CRM_*` values connect this app to the CRM's DC Inward API. **Saving a DC raises
 stock in whichever CRM `CRM_API_BASE_URL` points at**, and it has no default on
@@ -103,9 +110,10 @@ that's only for day-to-day development (see `CLAUDE.md`).
      them up on the desktop page — or, if the same delivery was already
      photographed in the separate `dc_pipeline` app, pull those photos in
      directly by DC number + supplier via the Inbox's "Fetch from Pipeline".
-2. Select the extraction model from the dropdown: **Lite** (default, Gemini
-   3.1 Flash Lite) for smaller DCs, or **Lite 2** / **Pro** / **Pro 2** with
-   **Reasoning** enabled for larger or multi-page ones.
+2. Select the extraction model from the dropdown: **Lite** (default, Claude
+   Sonnet 5.5) for smaller DCs, or **Pro** (Claude Opus 5.5) for larger or
+   multi-page ones. The other models are still there as **Lite 2**, **Lite 3**,
+   **Pro 2** and **Pro 3**, and the last three can use **Reasoning**.
 3. Click **Extract Products**
 4. Review and edit the extracted table
 5. Click **Check DC**. Nothing is saved yet: the CRM checks the DC and lists any
@@ -160,10 +168,10 @@ dc-entry-automation/
 │   │   └── admin.py             # PIN-gated: product-catalog upload
 │   └── services/
 │       ├── crm_api.py           # All calls to the CRM's DC Inward API
-│       ├── openrouter.py        # Gemini extraction via OpenRouter
+│       ├── openrouter.py        # Reads the DC: Claude directly, or a model via OpenRouter
 │       ├── pen_marks.py         # Reads red pen marks, reports supplier mistakes to dc_pipeline
 │       ├── product_matcher.py   # Two-stage fuzzy SKU matching
-│       ├── client.py            # OpenAI SDK clients → OpenRouter
+│       ├── client.py            # OpenAI SDK clients → OpenRouter and Anthropic
 │       └── matcher_instance.py  # Singleton matcher loaded from Excel
 ├── frontend/
 │   ├── src/

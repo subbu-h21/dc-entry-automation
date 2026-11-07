@@ -29,19 +29,19 @@ function formatInboxTime(iso: string): string {
 }
 
 // Vision-capable extraction models offered in the dropdown — kept to a short,
-// hand-picked list (not fetched from OpenRouter's catalog) since that's this
-// app's existing pattern. Each id/supportsReasoning value verified directly
-// against OpenRouter's live /api/v1/models response — all four are real,
-// image-input-capable, and list "reasoning" in their supported_parameters
-// (Gemini 3.1 Flash Lite is the exception on reasoning — verified 2026-09-02
-// per the original 3-model list; not re-checked since, unchanged from before).
-// Note google/gemini-3.6-flash has no undated alias on OpenRouter — the
-// pinned, dated slug below is the real id (verified 2026-09-02).
+// hand-picked list (not fetched from any catalog) since that's this app's
+// existing pattern. Lite and Pro are Claude, called directly with ANTHROPIC_KEY
+// (CLAUDE_MODELS in config.py must list the same ids); Claude decides for itself
+// how hard to think, so the Reasoning tick doesn't apply to it. The rest go through
+// OpenRouter: their ids were checked against its live /api/v1/models on 2026-11-07.
+const DEFAULT_EXTRACTION_MODEL = 'claude-sonnet-5-5';
 const EXTRACTION_MODELS = [
-  { value: 'google/gemini-3.1-flash-lite',    label: 'Lite',   supportsReasoning: false },
-  { value: 'qwen/qwen3.8-flash',              label: 'Lite 2', supportsReasoning: true },
-  { value: 'google/gemini-3.7-flash',         label: 'Pro',    supportsReasoning: true },
-  { value: 'google/gemini-3.6-flash-20260721', label: 'Pro 2',  supportsReasoning: true },
+  { value: DEFAULT_EXTRACTION_MODEL,       label: 'Lite',   supportsReasoning: false },
+  { value: 'google/gemini-3.1-flash-lite', label: 'Lite 2', supportsReasoning: false },
+  { value: 'qwen/qwen3.8-flash',           label: 'Lite 3', supportsReasoning: true },
+  { value: 'claude-opus-5-5',              label: 'Pro',    supportsReasoning: false },
+  { value: 'google/gemini-3.7-flash',      label: 'Pro 2',  supportsReasoning: true },
+  { value: 'google/gemini-3.6-flash',      label: 'Pro 3',  supportsReasoning: true },
 ];
 
 
@@ -179,7 +179,7 @@ export default function App() {
   // assumed to always exist on it.
   const [checkedBy, setCheckedBy]   = useState(() => sessionStorage.getItem('dc_checked_by') ?? '');
   const [scanId, setScanId]         = useState(() => sessionStorage.getItem('dc_scan_id') ?? '');
-  const [extractionModel, setExtractionModel] = useState('google/gemini-3.1-flash-lite');
+  const [extractionModel, setExtractionModel] = useState(DEFAULT_EXTRACTION_MODEL);
   const [reasoning, setReasoning] = useState(false);
   const [branch, setBranch] = useState(() => sessionStorage.getItem('dc_branch') ?? 'HOSPET ROAD');
   const [suppliers, setSuppliers] = useState<string[]>([]);
@@ -721,7 +721,7 @@ export default function App() {
             </label>
           </div>
           <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-            Use <strong>Lite</strong> for smaller DCs &nbsp;·&nbsp; <strong>Lite 2</strong>, <strong>Pro</strong>, or <strong>Pro 2</strong> with reasoning turned on for larger DCs
+            Use <strong>Lite</strong> for smaller DCs &nbsp;·&nbsp; <strong>Pro</strong> for larger DCs &nbsp;·&nbsp; <strong>Lite 3</strong>, <strong>Pro 2</strong> and <strong>Pro 3</strong> can use reasoning
           </span>
           </div>
 
@@ -885,7 +885,7 @@ export default function App() {
         }}
       >
         <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-          Pharmacy Bill Extractor &mdash; OpenRouter + Gemini 2.5 Flash + Tool Calling
+          Pharmacy Bill Extractor
         </p>
       </footer>
     </div>
@@ -994,7 +994,7 @@ function LoadingState() {
           Analysing invoice...
         </p>
         <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-          Gemini is reading the image
+          The AI is reading the image
         </p>
       </div>
     </div>

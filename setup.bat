@@ -25,7 +25,8 @@ if not exist .env (
     echo  IMPORTANT: Open backend\.env and fill in your API keys before running the app.
     echo  - OPENROUTER_API_KEY
     echo  - ELEVENLABS_API_KEY
-    echo  - DC_PIPELINE_URL    (only if dc_pipeline runs somewhere other than http://localhost:3002)
+    echo  - ANTHROPIC_KEY, for Claude on the Lite and Pro models
+    echo  - DC_PIPELINE_URL   (only if dc_pipeline runs somewhere other than http://localhost:3002)
     echo  - CRM_API_BASE_URL, CRM_CLIENT_ID, CRM_CLIENT_SECRET, CRM_DEFAULT_EMPLOYEE_ID (required for suppliers, staff and Save to CRM)
     echo.
 ) else (

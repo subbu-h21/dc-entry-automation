@@ -13,9 +13,20 @@ OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
 OPENROUTER_SITE_URL: str = os.getenv("OPENROUTER_SITE_URL", "http://localhost:5173")
 OPENROUTER_SITE_TITLE: str = os.getenv("OPENROUTER_SITE_TITLE", "Pharmacy Bill Extractor")
 
-EXTRACTION_MODEL: str = os.getenv("EXTRACTION_MODEL", "google/gemini-3.1-flash-lite")
+EXTRACTION_MODEL: str = os.getenv("EXTRACTION_MODEL", "claude-sonnet-5-5")
 MATCHING_MODEL: str = os.getenv("MATCHING_MODEL", "google/gemini-2.5-flash-lite")
 MARKS_MODEL: str = os.getenv("MARKS_MODEL", "google/gemini-3.7-flash")
+
+# Claude reads DC photos straight from Anthropic, paid from the Max plan's monthly
+# API credit, so this key must belong to the Console organisation holding that
+# credit. Only these exact ids go to Anthropic, so a request naming a dearer model
+# can't reach it. It doesn't stop a stranger spending the credit on these two:
+# /extract has no login, and that needs the login itself.
+ANTHROPIC_KEY: str = os.getenv("ANTHROPIC_KEY", "")
+ANTHROPIC_BASE_URL: str = "https://api.anthropic.com/v1/"
+CLAUDE_MODELS: frozenset[str] = frozenset({"claude-sonnet-5-5", "claude-opus-5-5"})
+# Takes over through OpenRouter, with reasoning on, when Claude can't read a DC.
+FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "google/gemini-3.7-flash")
 
 PORT: int = int(os.getenv("PORT", "3001"))
 ALLOWED_ORIGINS: list[str] = [
