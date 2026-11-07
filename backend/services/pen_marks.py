@@ -29,8 +29,16 @@ from services.openrouter import _reasoning_body
 log = logging.getLogger(__name__)
 
 _CHECK_SIZE = 2000            # photos are scaled to this first, so the count below means the same for any photo
-_RED_MARGIN = 70              # how much stronger red must be than both green and blue; skin tones fall short of this
-_RED_PIXELS_NEEDED = 40       # set from a painted test photo; may need tuning against real red-pen DCs
+_PAPER_SHARE = 0.10           # the brightest tenth of a photo is taken to be the paper
+_PAPER_LEVEL = 230            # each colour is scaled so the paper comes out this bright, whatever the light
+_MAX_BOOST = 4.0              # a photo darker than this is mostly noise
+# These lean towards reading too many pages. A false alarm costs one cheap AI read that
+# then reports no marks, but a miss loses a supplier's mistake for good. Set from
+# simulated pens and AI-edited photos: no real red-pen photo has been tried yet.
+_RED_MARGIN = 25              # how much stronger red must be than both green and blue
+_RED_PIXELS_NEEDED = 15
+_BOX_PAD = 0.02               # the AI's box for a mark can be a little off
+_RED_AT_MARK_NEEDED = 6       # in testing, real marks had 420 or more and invented ones 0
 _SCAN_TIMEOUT_SECONDS = 120
 _SCAN_MAX_AGE_SECONDS = 24 * 3600   # long enough for a DC extracted one day and saved the next
 _MAX_SCANS = 20                     # scans hold photos in memory, and /extract has no login
@@ -55,8 +63,9 @@ _TOOL = {
                             "printed_value": {"type": "string", "description": "The printed text the mark applies to."},
                             "handwritten_value": {"type": "string", "description": "Any handwritten replacement or note, exactly as written. Empty if none."},
                             "reason": {"type": "string", "description": "One short sentence on what was seen."},
+                            "box": {"type": "array", "items": {"type": "integer"}, "description": "Where the red ink of this mark is: [ymin, xmin, ymax, xmax], each from 0 to 1000 across the image as it is, without turning it."},
                         },
-                        "required": ["product_name", "column", "mark_type", "printed_value", "handwritten_value", "reason"],
+                        "required": ["product_name", "column", "mark_type", "printed_value", "handwritten_value", "reason", "box"],
                     },
                 }
             },
@@ -79,15 +88,59 @@ as one mark, with the printed value and the handwritten value together. A row ca
 in any column. If there is no red pen mark, return an empty list."""
 
 
-def has_red_ink(image_bytes: bytes) -> bool:
+def _paper_level(band: Image.Image) -> int:
+    """How bright this colour gets in the brightest part of the photo."""
+    counts = band.histogram()
+    wanted = sum(counts) * _PAPER_SHARE
+    seen = 0
+    for level in range(255, 0, -1):
+        seen += counts[level]
+        if seen >= wanted:
+            return level
+    return 1
+
+
+def _even_out_light(img: Image.Image) -> list[Image.Image]:
+    """A dim shop or a yellow bulb changes how red ink looks. Scaling each colour so
+    the paper comes out the same makes any photo read as if taken in good light."""
+    bands = []
+    for band in img.split():
+        boost = min(_MAX_BOOST, _PAPER_LEVEL / _paper_level(band))
+        bands.append(band.point([min(255, int(v * boost)) for v in range(256)]))
+    return bands
+
+
+def _redness(image_bytes: bytes) -> Image.Image:
     with Image.open(io.BytesIO(image_bytes)) as original:
         img = original.convert("RGB")
     img.thumbnail((_CHECK_SIZE, _CHECK_SIZE))
-    red, green, blue = img.split()
-    redness = ImageChops.darker(ImageChops.subtract(red, green), ImageChops.subtract(red, blue))
-    count = sum(redness.histogram()[_RED_MARGIN:])
+    red, green, blue = _even_out_light(img)
+    return ImageChops.darker(ImageChops.subtract(red, green), ImageChops.subtract(red, blue))
+
+
+def has_red_ink(image_bytes: bytes) -> bool:
+    count = sum(_redness(image_bytes).histogram()[_RED_MARGIN:])
     log.info("Red check: %d red pixels (needs %d)", count, _RED_PIXELS_NEEDED)
     return count >= _RED_PIXELS_NEEDED
+
+
+def _red_at(redness: Image.Image, box: object) -> bool:
+    """Is there red ink where the AI says this mark is? On a page with a red stamp it
+    has reported blue pen as red, and it stood by that when asked the ink's colour, so
+    the photo decides. A mark with no usable box gets the benefit of the doubt."""
+    if not (isinstance(box, list) and len(box) == 4 and all(isinstance(n, (int, float)) for n in box)):
+        return True
+    width, height = redness.size
+    top, left, bottom, right = box
+    area = (
+        max(0, int((left / 1000 - _BOX_PAD) * width)),
+        max(0, int((top / 1000 - _BOX_PAD) * height)),
+        min(width, int((right / 1000 + _BOX_PAD) * width)),
+        min(height, int((bottom / 1000 + _BOX_PAD) * height)),
+    )
+    if area[2] <= area[0] or area[3] <= area[1]:
+        return True
+    return sum(redness.crop(area).histogram()[_RED_MARGIN:]) >= _RED_AT_MARK_NEEDED
 
 
 async def _read_page(image_bytes: bytes, mime: str) -> list[dict]:
@@ -104,7 +157,14 @@ async def _read_page(image_bytes: bytes, mime: str) -> list[dict]:
         timeout=_SCAN_TIMEOUT_SECONDS,
     )
     marks = json.loads(response.choices[0].message.tool_calls[0].function.arguments).get("marks", [])
-    return [m for m in marks if isinstance(m, dict)]
+    marks = [m for m in marks if isinstance(m, dict)]
+    if not marks:
+        return []
+    redness = await asyncio.to_thread(_redness, image_bytes)
+    real = [m for m in marks if _red_at(redness, m.get("box"))]
+    if len(real) < len(marks):
+        log.info("Dropped %d mark(s) with no red ink at that spot", len(marks) - len(real))
+    return real
 
 
 async def _read_marks(pages: list[tuple[bytes, str]]) -> list[dict]:
