@@ -632,6 +632,9 @@ export default function App() {
               ref={inboxInputRef}
               type="file"
               accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+              // On a phone this opens the back camera, like Upload Invoice's camera
+              // button; desktop browsers ignore it and show the file picker.
+              capture="environment"
               style={{ display: 'none' }}
               onChange={handleInboxUpload}
             />
