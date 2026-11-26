@@ -29,7 +29,53 @@ export interface Product {
   not_stocked: boolean;
   top_candidates: Candidate[];
   gemini_pick: Candidate | null;
+  value?: number;   // the row's printed Value, for the arithmetic check only
 }
+
+/** One cell the second check thinks is wrong. row null = the DC's number or date. */
+export interface ReviewIssue {
+  row: number | null;
+  field: string;
+  seen: string;
+  reason: string;
+}
+
+export interface ReviewState {
+  status: 'idle' | 'running' | 'done' | 'failed' | 'not_run';
+  issues: ReviewIssue[];
+  missing_rows: { product_name: string; reason: string }[];
+}
+
+/** The DC's printed totals; 0 or missing when not printed. */
+export interface PrintedTotals {
+  items?: number;
+  qty?: number;
+}
+
+const NUMERIC_FIELDS = new Set(['quantity', 'free', 'mrp', 'old_mrp', 'rate', 'disc_percent']);
+const FLAG_STYLE: React.CSSProperties = { background: '#ffedd5', outline: '1.5px solid #fb923c', borderRadius: 4, padding: '0 3px' };
+const money = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+/** Extraction strips everything but letters and digits from these and keeps the case, so Use does too. */
+const lettersAndDigits = (s: string) => s.replace(/[^A-Za-z0-9]/g, '');
+/** "9/27", "09-27" and "09/2027" are one expiry. */
+const expiryKey = (s: string) => {
+  const m = /^\s*(\d{1,2})\D+(\d{2}|\d{4})\s*$/.exec(s);
+  return m ? `${Number(m[1])}/${m[2].slice(-2)}` : s.trim().toUpperCase();
+};
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+/** An expiry as MM/YY, from "9/27", "09-2027" or "SEP-27"; null when it isn't clearly one. */
+const expiryFromDc = (s: string): string | null => {
+  const m = /^\s*([A-Za-z]+|\d{1,2})\s*[-/.\s]\s*(\d{2}|\d{4})\s*$/.exec(s);
+  if (!m) return null;
+  const month = /^\d+$/.test(m[1]) ? Number(m[1]) : MONTHS.indexOf(m[1].slice(0, 3).toUpperCase()) + 1;
+  if (month < 1 || month > 12 || (m[2].length === 4 && !m[2].startsWith('20'))) return null;
+  return `${String(month).padStart(2, '0')}/${m[2].slice(-2)}`;
+};
+/** A number only when that's all the DC shows ("1,250.50", "12%"); "5+1" or "10 x 15" gets no Use. */
+const plainNumber = (s: string): number | null => {
+  const t = s.replace(/[,\s₹]/g, '').replace(/%$/, '');
+  return /^\d+(\.\d+)?$/.test(t) ? Number(t) : null;
+};
 
 interface Override {
   product: string | null;
@@ -64,11 +110,15 @@ interface Props {
   products: Product[];
   dcDetails: DcDetails;
   onDCUpdate: (field: string, value: string) => void;
+  review?: ReviewState;
+  printedTotals?: PrintedTotals;
 }
+
+const NO_REVIEW: ReviewState = { status: 'idle', issues: [], missing_rows: [] };
 
 type ViewMode = 'auto' | 'table' | 'cards';
 
-export default function ResultsTable({ products, dcDetails, onDCUpdate }: Props) {
+export default function ResultsTable({ products, dcDetails, onDCUpdate, review = NO_REVIEW, printedTotals = {} }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try { return (localStorage.getItem('dc_view_mode') as ViewMode) || 'table'; } catch { return 'table'; }
   });
@@ -91,6 +141,7 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate }: Props)
   const [fieldOverrides, setFieldOverrides] = useState<Record<number, Partial<Product>>>({});
   const [editingCell, setEditingCell] = useState<{ idx: number; field: keyof Product } | null>(null);
   const [cellDraft, setCellDraft]     = useState('');
+  const [ignoredFlags, setIgnoredFlags] = useState<Set<string>>(() => new Set());
 
   // ── Voice command state ──────────────────────────────────────
   const [voiceRecording, setVoiceRecording]   = useState(false);
@@ -163,11 +214,12 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate }: Props)
       );
     }
     const modified = fieldOverrides[idx]?.[field] !== undefined;
+    const flag = cellFlag(idx, field);
     return (
       <span
-        title="Click to edit"
+        title={flag ?? 'Click to edit'}
         onClick={() => startEdit(idx, field)}
-        style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 2 }}
+        style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 2, ...(flag ? FLAG_STYLE : {}) }}
       >
         {displayNode}
         {modified && <span style={{ fontSize: '9px', opacity: 0.7, color: 'var(--accent)' }}>✎</span>}
@@ -288,6 +340,105 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate }: Props)
   }));
   const dcSubmit = useDcSubmit(dcRows, dcDetails);
 
+  // ── Second check: the free arithmetic check, the printed totals, Claude's flags ──
+  // A row adds up when its printed Value is within ₹1 of Rate × Qty, before or after the
+  // discount. Suppliers print Value differently (some with tax), so a row is only flagged
+  // when most of the DC's other rows do add up: then this one is the odd one out.
+  const arithmetic = new Map<number, string>();
+  {
+    const checkable = products.map((p, i) => {
+      const value = Number(p.value) || 0;
+      const rate = Number(resolvedField(i, 'rate')) || 0;
+      const qty = Number(resolvedField(i, 'quantity')) || 0;
+      const disc = Number(resolvedField(i, 'disc_percent')) || 0;
+      if (value <= 0 || rate <= 0 || qty <= 0) return null;
+      const plain = rate * qty;
+      return { i, value, plain, disc, ok: Math.abs(value - plain) <= 1 || Math.abs(value - plain * (1 - disc / 100)) <= 1 };
+    }).filter((r): r is { i: number; value: number; plain: number; disc: number; ok: boolean } => r !== null);
+    for (const r of checkable) {
+      if (r.ok) continue;
+      const others = checkable.filter(o => o.i !== r.i);
+      if (others.length && others.filter(o => o.ok).length > others.length / 2) {
+        // Both figures the Value was compared with, so a correct discounted Value isn't read as a mistake
+        const expected = r.disc > 0
+          ? `Rate × Qty is ${money(r.plain)}, or ${money(r.plain * (1 - r.disc / 100))} after the ${r.disc}% discount`
+          : `Rate × Qty is ${money(r.plain)}`;
+        arithmetic.set(r.i, `Value on the DC is ${money(r.value)} but ${expected}. Check Qty and Rate.`);
+      }
+    }
+  }
+  // Keyed by which total, not by the text: the text follows staff edits, and an Ignore must stay ignored.
+  const totalNotes: { key: string; text: string }[] = [];
+  if ((printedTotals.items ?? 0) > 0 && printedTotals.items !== products.length) {
+    totalNotes.push({ key: 'total|items', text: `The DC says ${printedTotals.items} items, the table has ${products.length}: a row may be missing or extra.` });
+  }
+  if ((printedTotals.qty ?? 0) > 0) {
+    const paid = products.reduce((s, _, i) => s + (Number(resolvedField(i, 'quantity')) || 0), 0);
+    const withFree = paid + products.reduce((s, _, i) => s + (Number(resolvedField(i, 'free')) || 0), 0);
+    if (Math.abs(printedTotals.qty! - paid) > 0.01 && Math.abs(printedTotals.qty! - withFree) > 0.01) {
+      totalNotes.push({ key: 'total|qty', text: `The DC's total quantity is ${printedTotals.qty}, but the table adds up to ${withFree}${withFree !== paid ? ` (${paid} paid + ${withFree - paid} free)` : ''}.` });
+    }
+  }
+
+  const flagKey = (f: ReviewIssue) => `${f.row ?? 'dc'}|${f.field}|${f.seen}`;
+  /** What "Use" would put in the cell, or null when there's nothing safe to put. */
+  const suggestion = (f: ReviewIssue): string | number | null => {
+    if (f.field === 'matched_product') return null; // a different product is picked with Change
+    if (NUMERIC_FIELDS.has(f.field)) return plainNumber(f.seen);
+    if (f.field === 'dc_date') return /^\d{4}-\d{2}-\d{2}$/.test(f.seen) ? f.seen : null;
+    if (f.field === 'dc_number' || f.field === 'batch_number') return lettersAndDigits(f.seen) || null;
+    if (f.field === 'expiry') return expiryFromDc(f.seen);
+    return f.seen;
+  };
+  /** Text compared the way the table stores it, so formatting alone never keeps a flag open. */
+  const sameText = (field: string, a: string, b: string) => {
+    if (field === 'dc_number' || field === 'batch_number') return lettersAndDigits(a).toUpperCase() === lettersAndDigits(b).toUpperCase();
+    if (field === 'expiry') return expiryKey(a) === expiryKey(b);
+    return a.trim().toUpperCase() === b.trim().toUpperCase();
+  };
+  const currentValue = (f: ReviewIssue): unknown => {
+    if (f.row === null) return f.field === 'dc_number' ? dcDetails.dc_number : dcDetails.dc_date;
+    return resolvedField(f.row, f.field as keyof Product);
+  };
+  /** Already done: the cell now holds what the DC shows, by Use or by typing. */
+  const settledFlag = (f: ReviewIssue) => {
+    if (f.field === 'matched_product' && f.row !== null) {
+      // staff picked a product with Change, as the flag tells them to
+      const picked = overrides[f.row];
+      return picked !== undefined && (picked?.product ?? null) !== products[f.row].matched_product;
+    }
+    const s = suggestion(f);
+    if (s === null) return false;
+    const cur = currentValue(f);
+    return typeof s === 'number' ? Number(cur) === s : sameText(f.field, String(cur ?? ''), s);
+  };
+  const openFlags = review.status === 'done'
+    ? review.issues.filter(f => (f.row === null || f.row < products.length) && !ignoredFlags.has(flagKey(f)) && !settledFlag(f))
+    : [];
+  const useFlag = (f: ReviewIssue) => {
+    const s = suggestion(f);
+    if (s === null) return;
+    if (f.row === null) onDCUpdate(f.field, String(s));
+    else setFieldOverrides(prev => ({ ...prev, [f.row as number]: { ...(prev[f.row as number] ?? {}), [f.field]: s } }));
+  };
+  const ignoreFlag = (f: ReviewIssue) => setIgnoredFlags(prev => new Set(prev).add(flagKey(f)));
+  // The free checks can be dismissed too: a misread Value or an odd "total items" can't be fixed in the table.
+  const arithmeticKey = (i: number) => `arith|${i}|${products[i]?.value}`;
+  const openArithmetic = [...arithmetic].filter(([i]) => !ignoredFlags.has(arithmeticKey(i)));
+  const openTotalNotes = totalNotes.filter(n => !ignoredFlags.has(n.key));
+  const missingKey = (m: { product_name: string }) => `missing|${m.product_name}`;
+  const openMissing = review.status === 'done' ? review.missing_rows.filter(m => !ignoredFlags.has(missingKey(m))) : [];
+  const openClaudeCount = openFlags.length + openMissing.length;
+  const ignoreKey = (key: string) => setIgnoredFlags(prev => new Set(prev).add(key));
+  function cellFlag(idx: number, field: string): string | null {
+    const claude = openFlags.find(f => f.row === idx && f.field === field);
+    if (claude) return `The DC shows "${claude.seen}". ${claude.reason}`;
+    if ((field === 'quantity' || field === 'rate') && arithmetic.has(idx) && !ignoredFlags.has(arithmeticKey(idx))) return arithmetic.get(idx)!;
+    return null;
+  }
+  const FLAG_LABELS: Record<string, string> = { ...FIELD_LABELS, ...DC_FIELD_LABELS, matched_product: 'Matched product', product_name: 'Invoice name' };
+  const showSecondCheck = review.status !== 'idle' || openArithmetic.length > 0 || openTotalNotes.length > 0;
+
   if (products.length === 0) {
     return (
       <EmptyState
@@ -363,6 +514,60 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate }: Props)
         </button>
         {dcSubmit.button}
       </div>
+
+      {showSecondCheck && (
+        <div style={{
+          background: 'var(--surface)', borderRadius: 'var(--radius)', border: '1px solid var(--border)',
+          padding: '12px 16px', boxShadow: 'var(--shadow-sm)', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)' }}>Second check</span>
+          {review.status === 'running' && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
+              <MiniSpinnerDark /> Claude Opus is double-checking the table…
+            </span>
+          )}
+          {review.status === 'failed' && <span style={{ color: 'var(--text-muted)' }}>Second check couldn't run this time.</span>}
+          {review.status === 'not_run' && <span style={{ color: 'var(--text-muted)' }}>The second check doesn't run again after the page is refreshed.</span>}
+          {review.status === 'done' && (openClaudeCount > 0
+            ? <strong>Claude: {openClaudeCount} thing{openClaudeCount === 1 ? '' : 's'} to look at</strong>
+            : review.issues.length + review.missing_rows.length === 0
+              ? <span style={{ color: 'var(--success)', fontWeight: 600 }}>Claude found nothing to look at.</span>
+              : <span style={{ color: 'var(--success)', fontWeight: 600 }}>Everything Claude raised has been dealt with.</span>)}
+          {openFlags.map(f => {
+            const s = suggestion(f);
+            return (
+              <div key={flagKey(f)} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px', background: '#fff7ed', borderRadius: 6 }}>
+                <span style={{ flex: 1, minWidth: 220 }}>
+                  <strong>{f.row === null ? 'DC' : `Row ${f.row + 1}`}, {FLAG_LABELS[f.field] ?? f.field}:</strong> the DC shows "{f.seen}". {f.reason}
+                  {f.field === 'matched_product' && ' Pick the right product with Change.'}
+                </span>
+                {s !== null && <button onClick={() => useFlag(f)} style={secondaryBtn(false)}>Use {String(s)}</button>}
+                <button onClick={() => ignoreFlag(f)} style={secondaryBtn(false)}>Ignore</button>
+              </div>
+            );
+          })}
+          {openMissing.map((m, i) => (
+            <div key={`${missingKey(m)}|${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px', background: '#fff7ed', borderRadius: 6 }}>
+              <span style={{ flex: 1, minWidth: 220 }}>
+                <strong>A row may be missing:</strong> "{m.product_name}" is on the DC but not in the table. {m.reason}
+              </span>
+              <button onClick={() => ignoreKey(missingKey(m))} style={secondaryBtn(false)}>Ignore</button>
+            </div>
+          ))}
+          {openArithmetic.map(([i, msg]) => (
+            <div key={`a${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px', background: '#fff7ed', borderRadius: 6 }}>
+              <span style={{ flex: 1, minWidth: 220 }}><strong>Row {i + 1}:</strong> {msg}</span>
+              <button onClick={() => ignoreKey(arithmeticKey(i))} style={secondaryBtn(false)}>Ignore</button>
+            </div>
+          ))}
+          {openTotalNotes.map(n => (
+            <div key={n.key} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px', background: '#fff7ed', borderRadius: 6 }}>
+              <span style={{ flex: 1, minWidth: 220 }}>{n.text}</span>
+              <button onClick={() => ignoreKey(n.key)} style={secondaryBtn(false)}>Ignore</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {dcSubmit.panel}
 
@@ -481,7 +686,7 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate }: Props)
                       {hasMatching && (
                         <>
                           {/* Matched CRM Product — click to highlight the row */}
-                          <td style={{ ...td, cursor: 'pointer' }} onClick={() => toggleHighlight(idx)} title="Click to highlight this row">
+                          <td style={{ ...td, cursor: 'pointer', ...(cellFlag(idx, 'matched_product') ? { background: '#ffedd5' } : {}) }} onClick={() => toggleHighlight(idx)} title={cellFlag(idx, 'matched_product') ?? 'Click to highlight this row'}>
                             {resolved?.product ? (
                               <span style={{ fontWeight: 500, color: modified ? 'var(--accent)' : 'var(--text-primary)' }}>
                                 {resolved.product}
@@ -688,7 +893,7 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate }: Props)
                     {hasMatching ? (
                       <>
                         {resolved?.product ? (
-                          <span style={{ fontWeight: 600, fontSize: '14px', color: modified ? 'var(--accent)' : 'var(--text-primary)' }}>
+                          <span style={{ fontWeight: 600, fontSize: '14px', color: modified ? 'var(--accent)' : 'var(--text-primary)', ...(cellFlag(idx, 'matched_product') ? FLAG_STYLE : {}) }}>
                             {resolved.product}
                             {modified && <span style={{ fontSize: '10px', marginLeft: 4, color: 'var(--accent)' }}>edited</span>}
                           </span>

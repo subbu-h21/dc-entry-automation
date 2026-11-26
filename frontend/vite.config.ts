@@ -9,6 +9,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/extract':        { target: 'http://localhost:3001', changeOrigin: true },
+      '/review':         { target: 'http://localhost:3001', changeOrigin: true },
       '/crm':            { target: 'http://localhost:3001', changeOrigin: true },
       '/voice':          { target: 'http://localhost:3001', changeOrigin: true },
       '/products':       { target: 'http://localhost:3001', changeOrigin: true },

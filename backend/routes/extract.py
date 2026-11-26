@@ -1,9 +1,12 @@
+import json
 import logging
+import math
 import re
 
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from services.openrouter import extract_invoice_data
+from services.review import review_table
 from services.product_matcher import match_order
 from services.matcher_instance import get_matcher
 from services import crm_api, pen_marks
@@ -77,6 +80,24 @@ def _fix_batch(products: list[dict]) -> None:
 
 def _fix_dc_number(dc_number: str) -> str:
     return _NON_ALNUM_RE.sub('', dc_number)
+
+
+def _number(value: object) -> float:
+    """The printed Value and totals only feed the page's arithmetic check, so anything
+    that isn't a plain number just counts as not printed."""
+    if isinstance(value, bool):
+        return 0
+    try:
+        number = float(value) if isinstance(value, (int, float)) else float(str(value).replace(",", "").strip())
+    except ValueError:
+        return 0
+    # NaN or infinity would make the whole Extract answer unsendable
+    return number if math.isfinite(number) else 0
+
+
+def _fix_value(products: list[dict]) -> None:
+    for p in products:
+        p['value'] = _number(p.get('value'))
 
 
 async def _match_supplier(extracted: str) -> str:
@@ -155,6 +176,9 @@ async def extract(
         # Step 1d — Strip non-alphanumeric chars from batch numbers
         _fix_batch(products)
 
+        # Step 1e — The printed row value, for the page's arithmetic check
+        _fix_value(products)
+
         # Step 2 — Match each extracted name to CRM catalog
         matcher = get_matcher()
         if matcher and products:
@@ -196,6 +220,8 @@ async def extract(
             "supplier_name":    matched_supplier,
             "products":         products,
             "scan_id":          scan_id,
+            "total_items":      _number(result.get("total_items")),
+            "total_qty":        _number(result.get("total_qty")),
         })
 
     except openai.AuthenticationError:
@@ -215,3 +241,34 @@ async def extract(
     except Exception as e:
         log.exception("Unhandled error in /extract")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+_REVIEW_FAILED = "Second check couldn't run this time."
+
+
+@router.post("/review")
+async def review(images: list[UploadFile] = File(...), table: str = Form(...)):
+    """The page sends the same photos and the extracted table straight after Extract.
+    Claude only flags; it never changes a value."""
+    if not images or len(images) > 2:
+        raise HTTPException(status_code=400, detail="Send 1 or 2 invoice pages.")
+    pages: list[tuple[bytes, str]] = []
+    for img in images:
+        if img.content_type not in ALLOWED_TYPES:
+            raise HTTPException(status_code=400, detail=f'Invalid file type "{img.content_type}".')
+        data = await img.read()
+        if len(data) > MAX_SIZE:
+            raise HTTPException(status_code=400, detail="File too large. Maximum size is 10 MB.")
+        pages.append((data, img.content_type))
+    try:
+        parsed_table = json.loads(table)
+        if not isinstance(parsed_table, dict):
+            raise ValueError
+    except ValueError:
+        raise HTTPException(status_code=400, detail="The table wasn't readable.")
+    try:
+        return await review_table(pages, parsed_table)
+    except Exception as e:
+        # Type only: an error's text can quote the request.
+        log.warning("Second check couldn't run (%s)", type(e).__name__)
+        raise HTTPException(status_code=503, detail=_REVIEW_FAILED)

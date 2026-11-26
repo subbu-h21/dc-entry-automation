@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
 import ImageUpload from './components/ImageUpload';
-import ResultsTable, { Product } from './components/ResultsTable';
+import ResultsTable, { Product, ReviewState, PrintedTotals } from './components/ResultsTable';
 import AdminPage from './components/AdminPage';
 import { labelStyle, labelText, inputStyle } from './styles';
 import {
@@ -179,6 +179,16 @@ export default function App() {
   // assumed to always exist on it.
   const [checkedBy, setCheckedBy]   = useState(() => sessionStorage.getItem('dc_checked_by') ?? '');
   const [scanId, setScanId]         = useState(() => sessionStorage.getItem('dc_scan_id') ?? '');
+  // The DC's printed totals, for the table's free arithmetic check.
+  const [printedTotals, setPrintedTotals] = useState<PrintedTotals>(() => {
+    try { return JSON.parse(sessionStorage.getItem('dc_printed_totals') || '{}'); } catch { return {}; }
+  });
+  // Claude's second look at the table. It needs the photos, which a refresh loses, so a
+  // table restored after a refresh says the check didn't run again.
+  const [review, setReview] = useState<ReviewState>(() => ({
+    status: (sessionStorage.getItem('dc_products') || '[]') !== '[]' ? 'not_run' : 'idle', issues: [], missing_rows: [],
+  }));
+  const reviewRun = useRef(0); // a newer Extract makes an older check's answer stale
   const [extractionModel, setExtractionModel] = useState(DEFAULT_EXTRACTION_MODEL);
   const [reasoning, setReasoning] = useState(false);
   const [branch, setBranch] = useState(() => sessionStorage.getItem('dc_branch') ?? 'HOSPET ROAD');
@@ -234,6 +244,7 @@ export default function App() {
   useEffect(() => { sessionStorage.setItem('dc_supplier',   supplier); },    [supplier]);
   useEffect(() => { sessionStorage.setItem('dc_checked_by', checkedBy); },   [checkedBy]);
   useEffect(() => { sessionStorage.setItem('dc_scan_id',    scanId); },      [scanId]);
+  useEffect(() => { sessionStorage.setItem('dc_printed_totals', JSON.stringify(printedTotals)); }, [printedTotals]);
   useEffect(() => { sessionStorage.setItem('dc_branch',     branch); },      [branch]);
 
   // Poll inbox every 10 seconds
@@ -256,9 +267,12 @@ export default function App() {
   // starting a fresh entry (both invoice page slots were empty beforehand),
   // not when adding a second page to an entry already in progress.
   const resetEntryState = () => {
-    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier', 'dc_scan_id'].forEach(k => sessionStorage.removeItem(k));
+    ['dc_products', 'dc_number', 'dc_date', 'dc_supplier', 'dc_scan_id', 'dc_printed_totals'].forEach(k => sessionStorage.removeItem(k));
     setProducts([]);
     setScanId('');
+    setPrintedTotals({});
+    reviewRun.current++;
+    setReview({ status: 'idle', issues: [], missing_rows: [] });
     setStatus('idle');
     setErrorMsg('');
     setDcNumber('');
@@ -287,11 +301,33 @@ export default function App() {
     setProductImagePreviewUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
   }, []);
 
+  // Runs straight after a successful Extract, in the background: the table is already
+  // on screen, and the flags appear when Claude answers. It never changes a value.
+  const runReview = async (imageFiles: File[], table: object) => {
+    const run = ++reviewRun.current;
+    setReview({ status: 'running', issues: [], missing_rows: [] });
+    try {
+      const fd = new FormData();
+      imageFiles.forEach(f => fd.append('images', f));
+      fd.append('table', JSON.stringify(table));
+      const res = await fetch('/review', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => null);
+      if (run !== reviewRun.current) return;
+      if (!res.ok || !data) throw new Error();
+      setReview({ status: 'done', issues: data.issues ?? [], missing_rows: data.missing_rows ?? [] });
+    } catch {
+      if (run === reviewRun.current) setReview({ status: 'failed', issues: [], missing_rows: [] });
+    }
+  };
+
   const doExtract = async (imageFiles: File[], prodImg: File | null = productImage) => {
     setStatus('loading');
     setErrorMsg('');
     setProducts([]);
     setScanId('');
+    setPrintedTotals({});
+    reviewRun.current++;
+    setReview({ status: 'idle', issues: [], missing_rows: [] });
 
     const formData = new FormData();
     imageFiles.forEach(f => formData.append('images', f));
@@ -312,7 +348,11 @@ export default function App() {
       if (data.dc_number)     setDcNumber(data.dc_number);
       if (data.dc_date)       setDcDate(data.dc_date);
       if (data.supplier_name) setSupplier(data.supplier_name);
+      setPrintedTotals({ items: Number(data.total_items) || 0, qty: Number(data.total_qty) || 0 });
       setStatus('success');
+      if ((data.products ?? []).length) {
+        runReview(imageFiles, { dc_number: data.dc_number ?? '', dc_date: data.dc_date ?? '', products: data.products });
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unexpected error. Please try again.';
       setErrorMsg(msg);
@@ -865,6 +905,8 @@ export default function App() {
               <ResultsTable
                 products={products}
                 dcDetails={{ dc_number: dcNumber, dc_date: dcDate, supplier, checked_by: checkedBy, branch, scan_id: scanId }}
+                review={review}
+                printedTotals={printedTotals}
                 onDCUpdate={(field, value) => {
                   if (field === 'dc_number')  setDcNumber(value);
                   if (field === 'dc_date')    setDcDate(value);

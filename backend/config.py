@@ -25,6 +25,9 @@ MARKS_MODEL: str = os.getenv("MARKS_MODEL", "google/gemini-3.7-flash")
 ANTHROPIC_KEY: str = os.getenv("ANTHROPIC_KEY", "")
 ANTHROPIC_BASE_URL: str = "https://api.anthropic.com/v1/"
 CLAUDE_MODELS: frozenset[str] = frozenset({"claude-sonnet-5-5", "claude-opus-5-5"})
+# The second look at every extracted table (services/review.py). Claude only: it flags,
+# it never changes a value, and when it can't run the page just says so.
+REVIEW_MODEL: str = os.getenv("REVIEW_MODEL", "claude-opus-5-5")
 # Takes over through OpenRouter, with reasoning on, when Claude can't read a DC.
 FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "google/gemini-3.7-flash")
 

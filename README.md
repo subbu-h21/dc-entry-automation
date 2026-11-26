@@ -115,7 +115,12 @@ that's only for day-to-day development (see `CLAUDE.md`).
    multi-page ones. The other models are still there as **Lite 2**, **Lite 3**,
    **Pro 2** and **Pro 3**, and the last three can use **Reasoning**.
 3. Click **Extract Products**
-4. Review and edit the extracted table
+4. Review and edit the extracted table. While you do, Claude Opus double-checks it
+   against the photo, which takes about 10–20 seconds and a few cents of the Claude
+   credit. The **Second check** box then lists anything that looks wrong, and those
+   cells turn orange. **Use** puts in what the DC shows, **Ignore** dismisses it.
+   Nothing changes by itself. Rows whose printed value doesn't add up, and a printed
+   item count or total quantity that doesn't match, are flagged at once, for free.
 5. Click **Check DC**. Nothing is saved yet: the CRM checks the DC and lists any
    problems.
    - **Not allowed:** fix the value in the table and check again. If the value

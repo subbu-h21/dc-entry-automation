@@ -44,6 +44,14 @@ EXTRACTION_TOOL = {
                     "type": "string",
                     "description": "Supplier / distributor / seller name from the invoice header. Empty string if not found.",
                 },
+                "total_items": {
+                    "type": "number",
+                    "description": "The printed total number of items / lines (e.g. 'TOTAL ITEMS: 6'). 0 if not printed.",
+                },
+                "total_qty": {
+                    "type": "number",
+                    "description": "The printed total quantity (e.g. 'TOTAL QTY: 14'). 0 if not printed.",
+                },
                 "products": {
                     "type": "array",
                     "items": {
@@ -86,6 +94,10 @@ EXTRACTION_TOOL = {
                                 ),
                             },
                             "disc_percent": {"type": "number"},
+                            "value": {
+                                "type": "number",
+                                "description": "The row's printed Value / Amount column, exactly as printed. 0 if there is no such column.",
+                            },
                         },
                         "required": ["product_name", "batch_number", "expiry", "old_mrp", "mrp", "rate", "quantity", "free", "disc_percent"],
                     },
@@ -160,6 +172,8 @@ Extract from the invoice header:
 - dc_number    : DC / invoice / bill number (e.g. "DC-00456"). "" if not found.
 - dc_date      : invoice date formatted as YYYY-MM-DD. "" if not found.
 - supplier_name: supplier / distributor / seller name. "" if not found.
+- total_items  : the printed total number of items / lines, if printed. 0 if not.
+- total_qty    : the printed total quantity, if printed. 0 if not.
 </header_fields>
 
 <product_fields>
@@ -184,6 +198,8 @@ For every row in the product table extract:
                   Tax% column — those are a different field. Ignore them
                   entirely for this purpose, even if printed right next to the
                   discount column.
+- value         : the row's Value / Amount column exactly as printed; 0 if absent.
+                  Copy it, never calculate it.
 </product_fields>"""
 
 
