@@ -285,6 +285,7 @@ async def employee_lookup(label: str) -> tuple[int, str] | None:
 # ── Products ──────────────────────────────────────────────────
 
 AMBIGUOUS = -1   # more than one CRM product fits, so this row must not be guessed
+_SEARCH_LIMIT = 20  # the CRM's product search returns at most this many, with no paging
 
 _product_ids: dict[tuple[str, str], int] = {}
 
@@ -293,15 +294,25 @@ def _product_key(name: str) -> str:
     return re.sub(r"\s+", " ", str(name)).strip().upper()
 
 
-def _pick_product(hits: list[dict], pack: str) -> int:
+def _pick_product(hits: list[dict], pack: str, cut_short: bool = False) -> int:
     """Picks from the CRM products with exactly this name. Several can share one
     name and differ only by pack (VEET HAIR REMOVER comes in 25GM and 60GM), and
     the wrong one is the wrong stock, so the pack decides and a tie is never
     guessed at. "10S" and "10 S" can be two separate products, so spaces only
-    stop mattering when no pack matches as written."""
+    stop mattering when no pack matches as written.
+
+    cut_short: the search filled the CRM's result limit, so other packs of this name
+    may have been left out. Then only one visible match with the row's exact pack
+    counts; anything looser could be the wrong product next to the right one that
+    wasn't shown. On a complete list a single match is the only product of that
+    name, whatever its pack label says (the live CRM's labels matched the
+    catalogue's 159 times in 160, and no search hit the limit)."""
+    wanted = _product_key(pack)
+    if cut_short:
+        same = [h for h in hits if wanted and _product_key(h.get("packLabel") or "") == wanted]
+        return same[0]["productId"] if len(same) == 1 else AMBIGUOUS
     if len(hits) == 1:
         return hits[0]["productId"]
-    wanted = _product_key(pack)
     same = [h for h in hits if _product_key(h.get("packLabel") or "") == wanted]
     if not same:
         wanted = wanted.replace(" ", "")
@@ -328,10 +339,11 @@ async def _find_product_id(name: str, pack: str, branch_id: int) -> int | None:
     # Match on the exact name, never the first result: the right product isn't
     # always listed first, and a near-match here is a wrong medicine in stock.
     try:
-        hits = [p for p in resp.json() if _product_key(p.get("productName", "")) == key]
+        results = resp.json()
+        hits = [p for p in results if _product_key(p.get("productName", "")) == key]
         if not hits:
             return None
-        product_id = _pick_product(hits, pack)
+        product_id = _pick_product(hits, pack, cut_short=len(results) >= _SEARCH_LIMIT)
     except (ValueError, KeyError, TypeError, AttributeError):
         log.error("CRM product search answer was not in the expected shape")
         raise CrmError("Couldn't look up products in the CRM.")
@@ -472,8 +484,10 @@ async def save_dc(body: dict, branch_id: int, employee_id: int, line_rows: list[
         raise CrmUnreachable("The CRM is still saving this. Wait a moment, then click Save again.")
 
     # A 5xx says nothing about whether the save went through: a gateway can fail
-    # after the CRM has committed. Treat it as unknown, so the same key is reused.
-    if resp.status_code >= 500:
+    # after the CRM has committed. So can a 408 or 429 from something in between,
+    # and any success other than the 201 the CRM sends is not one we understand.
+    # Treat all of these as unknown, so the same key is reused.
+    if resp.status_code >= 500 or resp.status_code in (408, 429) or 200 <= resp.status_code < 300:
         log.error("CRM save got status=%s code=%s", resp.status_code, _log_code(resp))
         raise CrmUnreachable()
 

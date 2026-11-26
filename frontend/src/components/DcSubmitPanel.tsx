@@ -87,6 +87,9 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
   const [refNo, setRefNo] = useState('');
   const [stage3Reported, setStage3Reported] = useState(true);
   const [unsure, setUnsure] = useState(false);
+  // A repeat of an unclear save was refused: only a person looking at the CRM can
+  // tell whether the first try went through, so the page stays locked until they do.
+  const [retryRefused, setRetryRefused] = useState(false);
   const [warning, setWarning] = useState<Warning | null>(null);
   const busy = useRef(false); // state updates too late to stop a fast double-click
   const pendingSave = useRef<object | null>(null); // the save in flight or awaiting a clear answer
@@ -139,10 +142,12 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
   const stale = report !== null && checkedPrint !== fingerprint;
   const allTicked = (report?.questions ?? []).every(q => ticks.has(tickKey(q)));
   const tooOld = dcDateTooOld(dc.dc_date);
-  const canSave = status === 'idle' && (unsure || (report !== null && !tooOld && !stale && report.errors.length === 0 && report.sent_rows > 0 && allTicked));
+  const canSave = status === 'idle' && !retryRefused && (unsure || (report !== null && !tooOld && !stale && report.errors.length === 0 && report.sent_rows > 0 && allTicked));
 
   const save = async () => {
     if (!canSave || busy.current) return;
+    // A repeat of a save whose outcome was unclear: the first try may already be in the CRM.
+    const retry = pendingSave.current !== null;
     const payload = pendingSave.current ?? { ...body(true), save_key: report?.save_key };
     pendingSave.current = payload;
     busy.current = true;
@@ -152,6 +157,7 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
     const settled = () => {
       pendingSave.current = null;
       setUnsure(false);
+      setRetryRefused(false);
     };
     try {
       const res = await post('/crm/dc/save', payload);
@@ -161,6 +167,15 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
         setRefNo(data.ref_no);
         setStage3Reported(data.stage3_reported);
         next = 'saved';
+      } else if (retry && res.status !== 504 && res.status < 500) {
+        // Any refusal here could mean the first try already saved: unlocking would
+        // invite a changed DC number and the same delivery's stock twice.
+        const exists = (data?.report?.errors ?? []).some((e: Issue) => e.code === 'DC_NUMBER_EXISTS');
+        setUnsure(true);
+        setRetryRefused(true);
+        setMessage(exists
+          ? `The CRM already has DC ${dc.dc_number}, so the first try almost certainly saved. Don't save it again: look for it on the CRM's DC Inward screen.`
+          : `We can't tell whether DC ${dc.dc_number} was saved. Look for it on the CRM's DC Inward screen before doing anything else.`);
       } else if (res.ok && data?.report) {
         settled();
         setReport(data.report);
@@ -206,6 +221,15 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
   const saveClicked = () => {
     if (missing > 0 && !pendingSave.current) setWarning({ kind: 'save' });
     else save();
+  };
+
+  // Only after staff have looked on the CRM screen and found no such DC.
+  const startOver = () => {
+    pendingSave.current = null;
+    setUnsure(false);
+    setRetryRefused(false);
+    setReport(null);
+    setMessage('');
   };
 
   const toggleTick = (q: Issue) => {
@@ -401,7 +425,9 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
               DC Date {dc.dc_date.split('-').reverse().join('/')} is more than {MAX_DC_AGE_DAYS} days old, so it can't be saved. Correct the DC Date at the top.
             </strong>
           )}
-          {unsure ? (
+          {unsure && retryRefused ? (
+            <span>Look for this DC on the CRM's DC Inward screen first. Only if it isn't there, click "It's not in the CRM, start again".</span>
+          ) : unsure ? (
             <span>Click Save to CRM again.</span>
           ) : stale ? (
             <span>Click Check again.</span>
@@ -421,7 +447,9 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
                 <strong>{rowNumbers(toTick) ? `Tick Yes on rows: ${rowNumbers(toTick)}` : 'Tick Yes on the DC question'}</strong>
               )}
               {dcProblems.map(e => (
-                <strong key={e.code}>{e.code === 'DC_NUMBER_EXISTS' ? `${e.message} Change the DC Number at the top.` : e.message}</strong>
+                <strong key={e.code}>{e.code === 'DC_NUMBER_EXISTS'
+                  ? `${e.message} This delivery may already be in the CRM: look for it on the DC Inward screen first, and don't save it again if it's there. Change the DC Number at the top only if it was misread from the photo.`
+                  : e.message}</strong>
               ))}
             </>
           )}
@@ -433,6 +461,11 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
           {stale && !unsure && (
             <button onClick={() => runCheck()} disabled={locked} style={{ ...smallBtn, padding: '8px 18px', fontSize: '13px', color: 'var(--accent)' }}>
               Check again
+            </button>
+          )}
+          {unsure && retryRefused && (
+            <button onClick={startOver} disabled={working} style={{ ...smallBtn, padding: '8px 18px', fontSize: '13px' }}>
+              It's not in the CRM, start again
             </button>
           )}
           <button
