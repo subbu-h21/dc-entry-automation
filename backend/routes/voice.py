@@ -107,7 +107,8 @@ async def voice_command(
     products: str = Form(...),
 ):
     if not ELEVENLABS_API_KEY:
-        raise HTTPException(status_code=500, detail="ELEVENLABS_API_KEY is not configured")
+        logger.error("ELEVENLABS_API_KEY is not set")
+        raise HTTPException(status_code=500, detail="Voice commands aren't set up on this computer.")
 
     # ── 1. Transcribe via ElevenLabs Scribe v2 ─────────────────
     audio_bytes = await audio.read()
@@ -133,7 +134,7 @@ async def voice_command(
 
     if not resp.ok:
         logger.error("ElevenLabs error %d: %s", resp.status_code, resp.text[:200])
-        raise HTTPException(status_code=502, detail=f"Transcription failed: {resp.text[:120]}")
+        raise HTTPException(status_code=502, detail="Couldn't turn the recording into text. Try again.")
 
     transcription: str = resp.json().get("text", "").strip()
     logger.info("Voice transcription: %r", transcription)

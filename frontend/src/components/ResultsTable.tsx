@@ -428,7 +428,7 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
   const openTotalNotes = totalNotes.filter(n => !ignoredFlags.has(n.key));
   const missingKey = (m: { product_name: string }) => `missing|${m.product_name}`;
   const openMissing = review.status === 'done' ? review.missing_rows.filter(m => !ignoredFlags.has(missingKey(m))) : [];
-  const openClaudeCount = openFlags.length + openMissing.length;
+  const openReviewCount = openFlags.length + openMissing.length;
   const ignoreKey = (key: string) => setIgnoredFlags(prev => new Set(prev).add(key));
   function cellFlag(idx: number, field: string): string | null {
     const claude = openFlags.find(f => f.row === idx && f.field === field);
@@ -523,16 +523,16 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
           <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)' }}>Second check</span>
           {review.status === 'running' && (
             <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
-              <MiniSpinnerDark /> Claude Opus is double-checking the table…
+              <MiniSpinnerDark /> Double-checking the table against the photo…
             </span>
           )}
           {review.status === 'failed' && <span style={{ color: 'var(--text-muted)' }}>Second check couldn't run this time.</span>}
           {review.status === 'not_run' && <span style={{ color: 'var(--text-muted)' }}>The second check doesn't run again after the page is refreshed.</span>}
-          {review.status === 'done' && (openClaudeCount > 0
-            ? <strong>Claude: {openClaudeCount} thing{openClaudeCount === 1 ? '' : 's'} to look at</strong>
+          {review.status === 'done' && (openReviewCount > 0
+            ? <strong>{openReviewCount} thing{openReviewCount === 1 ? '' : 's'} to look at</strong>
             : review.issues.length + review.missing_rows.length === 0
-              ? <span style={{ color: 'var(--success)', fontWeight: 600 }}>Claude found nothing to look at.</span>
-              : <span style={{ color: 'var(--success)', fontWeight: 600 }}>Everything Claude raised has been dealt with.</span>)}
+              ? <span style={{ color: 'var(--success)', fontWeight: 600 }}>The second check found nothing to look at.</span>
+              : <span style={{ color: 'var(--success)', fontWeight: 600 }}>Everything the second check raised has been dealt with.</span>)}
           {openFlags.map(f => {
             const s = suggestion(f);
             return (
