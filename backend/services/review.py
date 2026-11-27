@@ -17,6 +17,12 @@ from services.openrouter import _fit_for_claude
 log = logging.getLogger(__name__)
 
 _MAX_TOKENS = 16000  # as much room as extraction: thinking is always on, and a big DC needs it
+# Staff read the reasons in English and Kannada.
+_KN_DESCRIPTION = (
+    "The same sentence as reason, in simple everyday Kannada (Kannada script), as a pharmacy "
+    "store worker would say it. Keep product names, batch numbers, numbers and words like "
+    "Qty, Rate, MRP and Batch as they are."
+)
 ROW_FIELDS = ["product_name", "matched_product", "batch_number", "expiry", "old_mrp", "mrp", "rate", "quantity", "free", "disc_percent"]
 HEADER_FIELDS = ["dc_number", "dc_date"]
 
@@ -37,8 +43,9 @@ _TOOL = {
                             "field": {"type": "string", "enum": ROW_FIELDS + HEADER_FIELDS},
                             "seen_on_dc": {"type": "string", "description": "What the delivery note actually shows for this cell. Numbers as plain numbers, expiry as MM/YY, dc_date as YYYY-MM-DD."},
                             "reason": {"type": "string", "description": "One short sentence."},
+                            "reason_kn": {"type": "string", "description": _KN_DESCRIPTION},
                         },
-                        "required": ["row", "field", "seen_on_dc", "reason"],
+                        "required": ["row", "field", "seen_on_dc", "reason", "reason_kn"],
                     },
                 },
                 "missing_rows": {
@@ -48,8 +55,9 @@ _TOOL = {
                         "properties": {
                             "product_name": {"type": "string", "description": "The printed name of a product row that is not in the table."},
                             "reason": {"type": "string"},
+                            "reason_kn": {"type": "string", "description": _KN_DESCRIPTION},
                         },
-                        "required": ["product_name", "reason"],
+                        "required": ["product_name", "reason", "reason_kn"],
                     },
                 },
             },
@@ -80,6 +88,10 @@ put the printed name in seen_on_dc.
 List any printed product row that is missing from the table under missing_rows. If everything \
 matches, report empty lists.
 
+Staff read English and Kannada, so write every reason twice: reason in short plain English, and \
+reason_kn, the same sentence in simple everyday Kannada (Kannada script), keeping product \
+names, batch numbers, numbers and words like Qty, Rate, MRP and Batch as they are.
+
 The table:
 """
 
@@ -93,6 +105,14 @@ def _table_text(table: dict) -> str:
         cells["matched_pack"] = r.get("matched_pack")
         lines.append(f"row {i}: " + json.dumps(cells, ensure_ascii=False))
     return "\n".join(lines)
+
+
+def _with_kannada(entry: dict, item: dict) -> dict:
+    """Adds the Kannada reason when Claude gave one. A flag without it still shows, in English."""
+    kn = item.get("reason_kn")
+    if isinstance(kn, str) and kn.strip():
+        entry["reason_kn"] = kn.strip()[:300]
+    return entry
 
 
 def _clean(parsed: dict, row_count: int) -> dict:
@@ -113,11 +133,11 @@ def _clean(parsed: dict, row_count: int) -> dict:
         key = (flag["row"], flag["field"], flag["seen"])  # the same cell reported twice is one flag
         if key not in seen_keys:
             seen_keys.add(key)
-            issues.append(flag)
+            issues.append(_with_kannada(flag, item))
     missing = []
     for item in parsed.get("missing_rows") if isinstance(parsed.get("missing_rows"), list) else []:
         if isinstance(item, dict) and isinstance(item.get("product_name"), str) and item["product_name"].strip():
-            missing.append({"product_name": item["product_name"].strip()[:120], "reason": str(item.get("reason") or "")[:200]})
+            missing.append(_with_kannada({"product_name": item["product_name"].strip()[:120], "reason": str(item.get("reason") or "")[:200]}, item))
     return {"issues": issues, "missing_rows": missing}
 
 

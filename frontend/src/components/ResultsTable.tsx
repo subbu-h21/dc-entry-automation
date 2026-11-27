@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, Fragment } from 'react';
 import * as XLSX from 'xlsx';
 import { AlertIcon, CopyIcon, MiniSpinnerDark, MicIcon, StopRecIcon } from './icons';
 import { useDcSubmit, DcDetails, DcRowInput } from './DcSubmitPanel';
+import { Kn } from './Kn';
 
 export interface Candidate {
   index: number;
@@ -38,13 +39,21 @@ export interface ReviewIssue {
   field: string;
   seen: string;
   reason: string;
+  reason_kn?: string;  // the same reason in Kannada, when the check gave one
 }
 
 export interface ReviewState {
   status: 'idle' | 'running' | 'done' | 'failed' | 'not_run';
   issues: ReviewIssue[];
-  missing_rows: { product_name: string; reason: string }[];
+  missing_rows: { product_name: string; reason: string; reason_kn?: string }[];
 }
+
+/** Field names for the Kannada lines. Qty, Rate, MRP and Batch stay as staff say them. */
+const FLAG_LABELS_KN: Record<string, string> = {
+  quantity: 'Qty', free: 'Free (ಉಚಿತ)', mrp: 'MRP', old_mrp: 'ಹಳೆಯ MRP', rate: 'Rate',
+  disc_percent: 'ರಿಯಾಯಿತಿ %', batch_number: 'Batch', expiry: 'Expiry', product_name: 'ಇನ್‌ವಾಯ್ಸ್ ಹೆಸರು',
+  matched_product: 'ಆಯ್ಕೆಯಾದ ಉತ್ಪನ್ನ', dc_number: 'DC ಸಂಖ್ಯೆ', dc_date: 'DC ದಿನಾಂಕ',
+};
 
 /** The DC's printed totals; 0 or missing when not printed. */
 export interface PrintedTotals {
@@ -53,7 +62,13 @@ export interface PrintedTotals {
 }
 
 const NUMERIC_FIELDS = new Set(['quantity', 'free', 'mrp', 'old_mrp', 'rate', 'disc_percent']);
-const FLAG_STYLE: React.CSSProperties = { background: '#ffedd5', outline: '1.5px solid #fb923c', borderRadius: 4, padding: '0 3px' };
+/** The batch goes into stock exactly as shown, so it's the easiest cell to read and check. */
+const BATCH_STYLE: React.CSSProperties = {
+  fontFamily: 'monospace', fontSize: '15px', fontWeight: 700, letterSpacing: '0.06em',
+  color: '#1e293b', background: '#fef9c3', border: '1px solid #facc15', borderRadius: 6, padding: '3px 9px',
+  whiteSpace: 'nowrap',
+};
+const FLAG_STYLE: React.CSSProperties ={ background: '#ffedd5', outline: '1.5px solid #fb923c', borderRadius: 4, padding: '0 3px' };
 const money = (n: number) => n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 /** Extraction strips everything but letters and digits from these and keeps the case, so Use does too. */
 const lettersAndDigits = (s: string) => s.replace(/[^A-Za-z0-9]/g, '');
@@ -344,7 +359,7 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
   // A row adds up when its printed Value is within ₹1 of Rate × Qty, before or after the
   // discount. Suppliers print Value differently (some with tax), so a row is only flagged
   // when most of the DC's other rows do add up: then this one is the odd one out.
-  const arithmetic = new Map<number, string>();
+  const arithmetic = new Map<number, { en: string; kn: string }>();
   {
     const checkable = products.map((p, i) => {
       const value = Number(p.value) || 0;
@@ -360,23 +375,38 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
       const others = checkable.filter(o => o.i !== r.i);
       if (others.length && others.filter(o => o.ok).length > others.length / 2) {
         // Both figures the Value was compared with, so a correct discounted Value isn't read as a mistake
+        const afterDisc = money(r.plain * (1 - r.disc / 100));
         const expected = r.disc > 0
-          ? `Rate × Qty is ${money(r.plain)}, or ${money(r.plain * (1 - r.disc / 100))} after the ${r.disc}% discount`
+          ? `Rate × Qty is ${money(r.plain)}, or ${afterDisc} after the ${r.disc}% discount`
           : `Rate × Qty is ${money(r.plain)}`;
-        arithmetic.set(r.i, `Value on the DC is ${money(r.value)} but ${expected}. Check Qty and Rate.`);
+        const expectedKn = r.disc > 0
+          ? `Rate × Qty ${money(r.plain)}, ${r.disc}% ರಿಯಾಯಿತಿಯ ನಂತರ ${afterDisc}`
+          : `Rate × Qty ${money(r.plain)}`;
+        arithmetic.set(r.i, {
+          en: `Value on the DC is ${money(r.value)} but ${expected}. Check Qty and Rate.`,
+          kn: `DC ಯಲ್ಲಿ Value ${money(r.value)} ಇದೆ, ಆದರೆ ${expectedKn}. Qty ಮತ್ತು Rate ಪರಿಶೀಲಿಸಿ.`,
+        });
       }
     }
   }
   // Keyed by which total, not by the text: the text follows staff edits, and an Ignore must stay ignored.
-  const totalNotes: { key: string; text: string }[] = [];
+  const totalNotes: { key: string; text: string; kn: string }[] = [];
   if ((printedTotals.items ?? 0) > 0 && printedTotals.items !== products.length) {
-    totalNotes.push({ key: 'total|items', text: `The DC says ${printedTotals.items} items, the table has ${products.length}: a row may be missing or extra.` });
+    totalNotes.push({
+      key: 'total|items',
+      text: `The DC says ${printedTotals.items} items, the table has ${products.length}: a row may be missing or extra.`,
+      kn: `DC ಯಲ್ಲಿ ${printedTotals.items} ಐಟಂಗಳಿವೆ, ಪಟ್ಟಿಯಲ್ಲಿ ${products.length} ಇವೆ: ಒಂದು ಸಾಲು ಬಿಟ್ಟುಹೋಗಿರಬಹುದು ಅಥವಾ ಹೆಚ್ಚಾಗಿರಬಹುದು.`,
+    });
   }
   if ((printedTotals.qty ?? 0) > 0) {
     const paid = products.reduce((s, _, i) => s + (Number(resolvedField(i, 'quantity')) || 0), 0);
     const withFree = paid + products.reduce((s, _, i) => s + (Number(resolvedField(i, 'free')) || 0), 0);
     if (Math.abs(printedTotals.qty! - paid) > 0.01 && Math.abs(printedTotals.qty! - withFree) > 0.01) {
-      totalNotes.push({ key: 'total|qty', text: `The DC's total quantity is ${printedTotals.qty}, but the table adds up to ${withFree}${withFree !== paid ? ` (${paid} paid + ${withFree - paid} free)` : ''}.` });
+      totalNotes.push({
+        key: 'total|qty',
+        text: `The DC's total quantity is ${printedTotals.qty}, but the table adds up to ${withFree}${withFree !== paid ? ` (${paid} paid + ${withFree - paid} free)` : ''}.`,
+        kn: `DC ಯ ಒಟ್ಟು Qty ${printedTotals.qty}, ಆದರೆ ಪಟ್ಟಿಯ ಒಟ್ಟು ${withFree}${withFree !== paid ? ` (${paid} ಪಾವತಿ + ${withFree - paid} ಉಚಿತ)` : ''}.`,
+      });
     }
   }
 
@@ -432,8 +462,9 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
   const ignoreKey = (key: string) => setIgnoredFlags(prev => new Set(prev).add(key));
   function cellFlag(idx: number, field: string): string | null {
     const claude = openFlags.find(f => f.row === idx && f.field === field);
-    if (claude) return `The DC shows "${claude.seen}". ${claude.reason}`;
-    if ((field === 'quantity' || field === 'rate') && arithmetic.has(idx) && !ignoredFlags.has(arithmeticKey(idx))) return arithmetic.get(idx)!;
+    if (claude) return `The DC shows "${claude.seen}". ${claude.reason}${claude.reason_kn ? `\nDC ಯಲ್ಲಿ "${claude.seen}" ಇದೆ. ${claude.reason_kn}` : ''}`;
+    const sum = arithmetic.get(idx);
+    if ((field === 'quantity' || field === 'rate') && sum && !ignoredFlags.has(arithmeticKey(idx))) return `${sum.en}\n${sum.kn}`;
     return null;
   }
   const FLAG_LABELS: Record<string, string> = { ...FIELD_LABELS, ...DC_FIELD_LABELS, matched_product: 'Matched product', product_name: 'Invoice name' };
@@ -520,19 +551,27 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
           background: 'var(--surface)', borderRadius: 'var(--radius)', border: '1px solid var(--border)',
           padding: '12px 16px', boxShadow: 'var(--shadow-sm)', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: 8,
         }}>
-          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)' }}>Second check</span>
+          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)' }}>Second check · ಎರಡನೇ ಪರಿಶೀಲನೆ</span>
           {review.status === 'running' && (
             <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-secondary)' }}>
-              <MiniSpinnerDark /> Double-checking the table against the photo…
+              <MiniSpinnerDark />
+              <span>Double-checking the table against the photo…<Kn>ಫೋಟೋ ನೋಡಿ ಪಟ್ಟಿಯನ್ನು ಮತ್ತೊಮ್ಮೆ ಪರಿಶೀಲಿಸಲಾಗುತ್ತಿದೆ…</Kn></span>
             </span>
           )}
-          {review.status === 'failed' && <span style={{ color: 'var(--text-muted)' }}>Second check couldn't run this time.</span>}
-          {review.status === 'not_run' && <span style={{ color: 'var(--text-muted)' }}>The second check doesn't run again after the page is refreshed.</span>}
+          {review.status === 'failed' && (
+            <span style={{ color: 'var(--text-muted)' }}>Second check couldn't run this time.<Kn>ಈ ಬಾರಿ ಎರಡನೇ ಪರಿಶೀಲನೆ ನಡೆಯಲಿಲ್ಲ.</Kn></span>
+          )}
+          {review.status === 'not_run' && (
+            <span style={{ color: 'var(--text-muted)' }}>
+              The second check doesn't run again after the page is refreshed.
+              <Kn>ಪುಟವನ್ನು ರಿಫ್ರೆಶ್ ಮಾಡಿದ ಮೇಲೆ ಎರಡನೇ ಪರಿಶೀಲನೆ ಮತ್ತೆ ನಡೆಯುವುದಿಲ್ಲ.</Kn>
+            </span>
+          )}
           {review.status === 'done' && (openReviewCount > 0
-            ? <strong>{openReviewCount} thing{openReviewCount === 1 ? '' : 's'} to look at</strong>
+            ? <strong>{openReviewCount} thing{openReviewCount === 1 ? '' : 's'} to look at<Kn>ನೋಡಬೇಕಾದವು: {openReviewCount}</Kn></strong>
             : review.issues.length + review.missing_rows.length === 0
-              ? <span style={{ color: 'var(--success)', fontWeight: 600 }}>The second check found nothing to look at.</span>
-              : <span style={{ color: 'var(--success)', fontWeight: 600 }}>Everything the second check raised has been dealt with.</span>)}
+              ? <span style={{ color: 'var(--success)', fontWeight: 600 }}>The second check found nothing to look at.<Kn>ಎರಡನೇ ಪರಿಶೀಲನೆಯಲ್ಲಿ ನೋಡಬೇಕಾದದ್ದು ಏನೂ ಸಿಗಲಿಲ್ಲ.</Kn></span>
+              : <span style={{ color: 'var(--success)', fontWeight: 600 }}>Everything the second check raised has been dealt with.<Kn>ಎರಡನೇ ಪರಿಶೀಲನೆ ತೋರಿಸಿದ ಎಲ್ಲವನ್ನೂ ನೋಡಲಾಗಿದೆ.</Kn></span>)}
           {openFlags.map(f => {
             const s = suggestion(f);
             return (
@@ -540,9 +579,13 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
                 <span style={{ flex: 1, minWidth: 220 }}>
                   <strong>{f.row === null ? 'DC' : `Row ${f.row + 1}`}, {FLAG_LABELS[f.field] ?? f.field}:</strong> the DC shows "{f.seen}". {f.reason}
                   {f.field === 'matched_product' && ' Pick the right product with Change.'}
+                  <Kn>
+                    <strong>{f.row === null ? 'DC' : `ಸಾಲು ${f.row + 1}`}, {FLAG_LABELS_KN[f.field] ?? FLAG_LABELS[f.field] ?? f.field}:</strong> DC ಯಲ್ಲಿ "{f.seen}" ಇದೆ. {f.reason_kn ?? ''}
+                    {f.field === 'matched_product' && ' ಸರಿಯಾದ ಉತ್ಪನ್ನವನ್ನು Change ಒತ್ತಿ ಆಯ್ಕೆ ಮಾಡಿ.'}
+                  </Kn>
                 </span>
-                {s !== null && <button onClick={() => useFlag(f)} style={secondaryBtn(false)}>Use {String(s)}</button>}
-                <button onClick={() => ignoreFlag(f)} style={secondaryBtn(false)}>Ignore</button>
+                {s !== null && <button onClick={() => useFlag(f)} style={secondaryBtn(false)}>Use {String(s)} · ಬಳಸಿ</button>}
+                <button onClick={() => ignoreFlag(f)} style={secondaryBtn(false)}>Ignore · ಬಿಡಿ</button>
               </div>
             );
           })}
@@ -550,20 +593,24 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
             <div key={`${missingKey(m)}|${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px', background: '#fff7ed', borderRadius: 6 }}>
               <span style={{ flex: 1, minWidth: 220 }}>
                 <strong>A row may be missing:</strong> "{m.product_name}" is on the DC but not in the table. {m.reason}
+                <Kn><strong>ಒಂದು ಸಾಲು ಬಿಟ್ಟುಹೋಗಿರಬಹುದು:</strong> "{m.product_name}" DC ಯಲ್ಲಿ ಇದೆ, ಆದರೆ ಪಟ್ಟಿಯಲ್ಲಿ ಇಲ್ಲ. {m.reason_kn ?? ''}</Kn>
               </span>
-              <button onClick={() => ignoreKey(missingKey(m))} style={secondaryBtn(false)}>Ignore</button>
+              <button onClick={() => ignoreKey(missingKey(m))} style={secondaryBtn(false)}>Ignore · ಬಿಡಿ</button>
             </div>
           ))}
           {openArithmetic.map(([i, msg]) => (
             <div key={`a${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px', background: '#fff7ed', borderRadius: 6 }}>
-              <span style={{ flex: 1, minWidth: 220 }}><strong>Row {i + 1}:</strong> {msg}</span>
-              <button onClick={() => ignoreKey(arithmeticKey(i))} style={secondaryBtn(false)}>Ignore</button>
+              <span style={{ flex: 1, minWidth: 220 }}>
+                <strong>Row {i + 1}:</strong> {msg.en}
+                <Kn><strong>ಸಾಲು {i + 1}:</strong> {msg.kn}</Kn>
+              </span>
+              <button onClick={() => ignoreKey(arithmeticKey(i))} style={secondaryBtn(false)}>Ignore · ಬಿಡಿ</button>
             </div>
           ))}
           {openTotalNotes.map(n => (
             <div key={n.key} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 8px', background: '#fff7ed', borderRadius: 6 }}>
-              <span style={{ flex: 1, minWidth: 220 }}>{n.text}</span>
-              <button onClick={() => ignoreKey(n.key)} style={secondaryBtn(false)}>Ignore</button>
+              <span style={{ flex: 1, minWidth: 220 }}>{n.text}<Kn>{n.kn}</Kn></span>
+              <button onClick={() => ignoreKey(n.key)} style={secondaryBtn(false)}>Ignore · ಬಿಡಿ</button>
             </div>
           ))}
         </div>
@@ -757,10 +804,8 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
 
                       {/* Batch */}
                       <td style={{ ...td, textAlign: 'center' }}>
-                        {renderEdit(idx, 'batch_number', false, 100,
-                          <span style={{ fontFamily: 'monospace', fontSize: '12px', background: '#f1f5f9', borderRadius: 6, padding: '2px 8px', color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>
-                            {resolvedField(idx, 'batch_number')}
-                          </span>,
+                        {renderEdit(idx, 'batch_number', false, 130,
+                          <span style={BATCH_STYLE}>{resolvedField(idx, 'batch_number')}</span>,
                         )}
                       </td>
 
@@ -947,7 +992,7 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
                 <div style={{ paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
                   <MetricTile label="Batch">
                     {renderEdit(idx, 'batch_number', false, 220,
-                      <span style={{ fontFamily: 'monospace' }}>{resolvedField(idx, 'batch_number')}</span>,
+                      <span style={BATCH_STYLE}>{resolvedField(idx, 'batch_number')}</span>,
                       'left',
                     )}
                   </MetricTile>
@@ -1309,11 +1354,11 @@ function pill(color: string, bg: string): React.CSSProperties {
 }
 
 const th: React.CSSProperties = {
-  padding: '11px 14px', textAlign: 'center',
+  padding: '11px 10px', textAlign: 'center',
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
   color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
 };
 const td: React.CSSProperties = {
-  padding: '11px 14px', borderBottom: '1px solid var(--border)',
+  padding: '11px 10px', borderBottom: '1px solid var(--border)',
   color: 'var(--text-primary)', verticalAlign: 'middle',
 };

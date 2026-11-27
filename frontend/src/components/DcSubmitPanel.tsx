@@ -1,5 +1,6 @@
 import { useRef, useState, CSSProperties, ReactNode } from 'react';
 import { MiniSpinner } from './icons';
+import { Kn } from './Kn';
 
 // The whole "send this DC to the CRM" interaction lives here on purpose, so it
 // can be reworked without touching the review table: Check, fix or confirm,
@@ -66,6 +67,52 @@ function dcDateTooOld(date: string): boolean {
 
 const LEFT_OUT_BY_HAND = 'Left out by hand.';
 const UNSURE_MESSAGE = "Not sure if this saved. Click Save again, it can't create a duplicate.";
+
+// Staff read English and Kannada. The CRM's own message stays in English with its exact
+// batch, MRP and amounts; this says in Kannada what that kind of problem means and what
+// to do. Codes are from the CRM's API guide (8.3, 8.4) plus our own three. A code not
+// listed here just shows in English.
+const ISSUE_KN: Record<string, string> = {
+  // Not allowed
+  PRODUCT_NOT_FOUND: 'ಈ ಉತ್ಪನ್ನ CRM ನಲ್ಲಿ ಇಲ್ಲ. Change ಒತ್ತಿ ಬೇರೆ ಉತ್ಪನ್ನ ಆಯ್ಕೆ ಮಾಡಿ.',
+  PRODUCT_NOT_IN_CRM: 'ಈ ಉತ್ಪನ್ನ CRM ನಲ್ಲಿ ಸಿಗಲಿಲ್ಲ. Change ಒತ್ತಿ ಬೇರೆ ಉತ್ಪನ್ನ ಆಯ್ಕೆ ಮಾಡಿ.',
+  PRODUCT_AMBIGUOUS: 'CRM ನಲ್ಲಿ ಈ ಹೆಸರಿನ ಒಂದಕ್ಕಿಂತ ಹೆಚ್ಚು ಉತ್ಪನ್ನಗಳಿವೆ, Pack ನಿಂದಲೂ ಗೊತ್ತಾಗುತ್ತಿಲ್ಲ. ಈ ಸಾಲನ್ನು CRM ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಎಂಟ್ರಿ ಮಾಡಿ.',
+  PRODUCT_INACTIVE: 'ಈ ಉತ್ಪನ್ನ CRM ನಲ್ಲಿ ಬಳಕೆಯಲ್ಲಿಲ್ಲ (inactive). ಸರಿಯಾದ ಉತ್ಪನ್ನ ಆಯ್ಕೆ ಮಾಡಿ, ಅಥವಾ ಈ ಸಾಲನ್ನು ಬಿಡಿ.',
+  PRODUCT_PURCHASE_BLOCKED: 'ಈ ಉತ್ಪನ್ನದ ಖರೀದಿಯನ್ನು CRM ನಲ್ಲಿ ತಡೆಹಿಡಿಯಲಾಗಿದೆ. ಈ ಸಾಲನ್ನು ಬಿಡಿ.',
+  FACTOR_MISMATCH: 'ಬಿಲ್‌ನ Pack, CRM ನ Pack ಜೊತೆ ಹೊಂದುತ್ತಿಲ್ಲ. ಉತ್ಪನ್ನ ತಪ್ಪಾಗಿರಬಹುದು: Change ಒತ್ತಿ ನೋಡಿ.',
+  PACK_MISMATCH: 'ಬಿಲ್‌ನ Pack, CRM ನ Pack ಜೊತೆ ಹೊಂದುತ್ತಿಲ್ಲ. ಉತ್ಪನ್ನ ತಪ್ಪಾಗಿರಬಹುದು: Change ಒತ್ತಿ ನೋಡಿ.',
+  RATE_ABOVE_MRP: 'GST ಸೇರಿಸಿದ Rate, MRP ಗಿಂತ ಹೆಚ್ಚಾಗಿದೆ. Rate ಮತ್ತು MRP ಪರಿಶೀಲಿಸಿ.',
+  EXPIRY_PAST: 'Expiry ಮುಂದಿನ ತಿಂಗಳುಗಳದ್ದಾಗಿರಬೇಕು. Expiry ಪರಿಶೀಲಿಸಿ.',
+  MRP_NEEDS_ADMIN: 'ಈ MRP ಗೆ admin ಪಾಸ್‌ವರ್ಡ್ ಬೇಕು. MRP ಸರಿಯಾಗಿದೆಯೇ ನೋಡಿ; ಸರಿಯಿದ್ದರೆ ಈ ಸಾಲನ್ನು ಬಿಟ್ಟು DC Inward ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಎಂಟ್ರಿ ಮಾಡಿ.',
+  BATCH_MRP_DIFFERENT: 'ಈ Batch ಈಗಾಗಲೇ ಬೇರೆ MRP ಯಲ್ಲಿ ಎಂಟ್ರಿ ಆಗಿದೆ. MRP ಸರಿಯಾಗಿದ್ದರೆ ಈ ಸಾಲನ್ನು ಬಿಟ್ಟು DC Inward ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಎಂಟ್ರಿ ಮಾಡಿ.',
+  SUPPLIER_NOT_FOUND: 'ಈ Supplier CRM ನಲ್ಲಿ ಸಿಗಲಿಲ್ಲ. ಮೇಲೆ Supplier ಮತ್ತೆ ಆಯ್ಕೆ ಮಾಡಿ.',
+  CHECKED_BY_NOT_FOUND: 'Checked By ವ್ಯಕ್ತಿ CRM ನಲ್ಲಿ ಸಿಗಲಿಲ್ಲ. ಮೇಲೆ ಮತ್ತೆ ಆಯ್ಕೆ ಮಾಡಿ.',
+  DC_NUMBER_EXISTS: 'ಈ DC ಸಂಖ್ಯೆ ಈ Supplier ಗೆ ಈಗಾಗಲೇ ಎಂಟ್ರಿ ಆಗಿದೆ. ಮೊದಲು DC Inward ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ನೋಡಿ, ಅಲ್ಲಿ ಇದ್ದರೆ ಮತ್ತೆ ಸೇವ್ ಮಾಡಬೇಡಿ. ಫೋಟೋದಿಂದ ತಪ್ಪಾಗಿ ಓದಿದ್ದರೆ ಮಾತ್ರ ಮೇಲೆ DC ಸಂಖ್ಯೆ ಬದಲಿಸಿ.',
+  DATE_IN_FUTURE: 'DC ದಿನಾಂಕ ಇಂದಿನ ನಂತರದ್ದಾಗಿದೆ. ಮೇಲೆ DC ದಿನಾಂಕ ಸರಿಪಡಿಸಿ.',
+  VALIDATION_ERROR: 'ಈ ಮೌಲ್ಯ ಸರಿಯಾಗಿಲ್ಲ. ಟೇಬಲ್‌ನಲ್ಲಿ ಸರಿಪಡಿಸಿ.',
+  // Please confirm
+  MRP_CHANGED: 'MRP ಹಿಂದಿನ ಖರೀದಿಗಿಂತ ಬದಲಾಗಿದೆ. ಬಿಲ್‌ನಲ್ಲಿ ಇದೇ MRP ಇದ್ದರೆ Yes ಟಿಕ್ ಮಾಡಿ.',
+  NO_EARLIER_PURCHASE: 'ಇದನ್ನು ಹಿಂದೆ ಖರೀದಿಸಿಲ್ಲ. MRP ಸರಿಯಾಗಿದೆಯೇ ನೋಡಿ, ನಂತರ Yes ಟಿಕ್ ಮಾಡಿ.',
+  SIMILAR_STRENGTH: 'ಈ MRP ಬೇರೆ strength ಗೆ ಹೆಚ್ಚು ಹೊಂದುತ್ತದೆ. ಉತ್ಪನ್ನ ಮತ್ತು strength ಸರಿಯಾಗಿದೆಯೇ ನೋಡಿ.',
+  RATE_MARGIN_OFF: 'Rate ಮತ್ತು MRP ನಡುವಿನ ಲಾಭ ಹಿಂದಿನ ಖರೀದಿಗಿಂತ ತುಂಬಾ ಬೇರೆ ಇದೆ. Rate ಪರಿಶೀಲಿಸಿ.',
+  NEW_SUPPLIER_PRODUCT: 'ಈ Supplier ನಿಂದ ಈ ಉತ್ಪನ್ನವನ್ನು ಹಿಂದೆ ಖರೀದಿಸಿಲ್ಲ. ಉತ್ಪನ್ನ ಸರಿಯಾಗಿದೆಯೇ?',
+  GST_DIFFERENT: 'ಬಿಲ್‌ನ GST %, CRM ನಲ್ಲಿರುವುದಕ್ಕಿಂತ ಬೇರೆ ಇದೆ. Yes ಟಿಕ್ ಮಾಡಿದರೆ ಬಿಲ್‌ನ GST ಯೊಂದಿಗೆ ಸೇವ್ ಆಗುತ್ತದೆ.',
+  DUPLICATE_ROW: 'ಇದೇ ಉತ್ಪನ್ನ ಮತ್ತು Batch ಮೇಲಿನ ಸಾಲಿನಲ್ಲೂ ಇದೆ. ಬಿಲ್‌ನಲ್ಲಿ ನಿಜವಾಗಿಯೂ ಎರಡು ಬಾರಿ ಇದೆಯೇ?',
+  BILL_AMOUNT_MISMATCH: 'ಲೆಕ್ಕ ಹಾಕಿದ ಒಟ್ಟು ಮೊತ್ತ ಬಿಲ್ ಮೊತ್ತಕ್ಕಿಂತ ಬೇರೆ ಇದೆ.',
+  RECEIVED_BEFORE_DC_DATE: 'ಸ್ವೀಕರಿಸಿದ ದಿನಾಂಕ DC ದಿನಾಂಕಕ್ಕಿಂತ ಮೊದಲು ಇದೆ.',
+  RATE_ZERO: 'Rate 0 ಇದೆ. ಬಿಲ್‌ನಲ್ಲಿ ನಿಜವಾಗಿಯೂ 0 ಇದ್ದರೆ ಮಾತ್ರ Yes ಟಿಕ್ ಮಾಡಿ; ಇಲ್ಲದಿದ್ದರೆ ಟೇಬಲ್‌ನಲ್ಲಿ Rate ಸರಿಪಡಿಸಿ.',
+};
+
+/** Kannada for the messages this panel itself can show; anything else from the server stays English only. */
+function messageKn(message: string): string {
+  if (message === UNSURE_MESSAGE) return 'ಸೇವ್ ಆಯಿತೇ ಎಂದು ಖಚಿತವಿಲ್ಲ. Save to CRM ಮತ್ತೆ ಒತ್ತಿ, ಇದರಿಂದ ಎರಡನೇ DC ಆಗುವುದಿಲ್ಲ.';
+  if (message.startsWith("Couldn't reach the server")) return 'ಸರ್ವರ್ ಸಿಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.';
+  if (message.startsWith('Fill in first:')) return `ಮೊದಲು ಇವುಗಳನ್ನು ತುಂಬಿ:${message.slice('Fill in first:'.length)}`;
+  if (message.startsWith('The CRM is still saving')) return 'CRM ಇನ್ನೂ ಸೇವ್ ಮಾಡುತ್ತಿದೆ. ಸ್ವಲ್ಪ ಕಾದು, ನಂತರ Save to CRM ಮತ್ತೆ ಒತ್ತಿ.';
+  if (message.startsWith('The CRM already has DC')) return 'CRM ನಲ್ಲಿ ಈ DC ಈಗಾಗಲೇ ಇದೆ, ಮೊದಲ ಪ್ರಯತ್ನದಲ್ಲೇ ಸೇವ್ ಆಗಿರಬಹುದು. ಮತ್ತೆ ಸೇವ್ ಮಾಡಬೇಡಿ: CRM ನ DC Inward ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ನೋಡಿ.';
+  if (message.startsWith("We can't tell whether DC")) return 'DC ಸೇವ್ ಆಯಿತೇ ಎಂದು ಹೇಳಲಾಗುತ್ತಿಲ್ಲ. ಬೇರೆ ಏನಾದರೂ ಮಾಡುವ ಮೊದಲು CRM ನ DC Inward ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಈ DC ಹುಡುಕಿ.';
+  return '';
+}
 
 function detailOf(data: unknown, fallback: string): string {
   const detail = (data as { detail?: unknown } | null)?.detail;
@@ -316,18 +363,27 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
       <div role="alertdialog" style={{ background: 'var(--surface)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-md)', padding: '20px 22px', width: '100%', maxWidth: 460, display: 'flex', flexDirection: 'column', gap: 10, fontSize: '14px', color: 'var(--text-primary)' }}>
         {warning.kind === 'row' ? (
           <>
-            <strong style={{ color: 'var(--warning)', fontSize: '15px' }}>Row {warning.row + 1} has no error</strong>
-            <span>The CRM hasn't reported an error on {rowName(warning.row).replace(/^Row \d+\s+/, '')}. Are you sure you want to leave it out?</span>
+            <strong style={{ color: 'var(--warning)', fontSize: '15px' }}>Row {warning.row + 1} has no error<Kn>ಸಾಲು {warning.row + 1} ರಲ್ಲಿ ಯಾವುದೇ ದೋಷ ಇಲ್ಲ</Kn></strong>
+            <span>
+              The CRM hasn't reported an error on {rowName(warning.row).replace(/^Row \d+\s+/, '')}. Are you sure you want to leave it out?
+              <Kn>CRM ಈ ಸಾಲಿನಲ್ಲಿ ಯಾವುದೇ ದೋಷ ತೋರಿಸಿಲ್ಲ. ಇದನ್ನು ಬಿಡಬೇಕೆಂದು ಖಚಿತವೇ?</Kn>
+            </span>
           </>
         ) : (
           <>
-            <strong style={{ color: 'var(--warning)', fontSize: '15px' }}>{missing} row{missing === 1 ? '' : 's'} won't be on this DC</strong>
-            <span>Saving a DC with rows left out is not normal practice. Only do this in an emergency, when you need the stock and batch entry so you can bill a product now.</span>
-            <span>Add the missing rows on the CRM screen afterwards.</span>
+            <strong style={{ color: 'var(--warning)', fontSize: '15px' }}>
+              {missing} row{missing === 1 ? '' : 's'} won't be on this DC
+              <Kn>{missing} ಸಾಲು(ಗಳು) ಈ DC ಯಲ್ಲಿ ಇರುವುದಿಲ್ಲ</Kn>
+            </strong>
+            <span>
+              Saving a DC with rows left out is not normal practice. Only do this in an emergency, when you need the stock and batch entry so you can bill a product now.
+              <Kn>ಸಾಲುಗಳನ್ನು ಬಿಟ್ಟು DC ಸೇವ್ ಮಾಡುವುದು ಸಾಮಾನ್ಯವಲ್ಲ. ಈಗಲೇ ಬಿಲ್ ಮಾಡಲು stock ಮತ್ತು batch ಎಂಟ್ರಿ ಬೇಕಾದ ತುರ್ತು ಸಂದರ್ಭದಲ್ಲಿ ಮಾತ್ರ ಹೀಗೆ ಮಾಡಿ.</Kn>
+            </span>
+            <span>Add the missing rows on the CRM screen afterwards.<Kn>ಬಿಟ್ಟ ಸಾಲುಗಳನ್ನು ನಂತರ CRM ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಸೇರಿಸಿ.</Kn></span>
           </>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
-          <button onClick={() => setWarning(null)} style={{ ...smallBtn, padding: '8px 16px', fontSize: '13px' }}>Cancel</button>
+          <button onClick={() => setWarning(null)} style={{ ...smallBtn, padding: '8px 16px', fontSize: '13px' }}>Cancel · ರದ್ದು</button>
           <button
             onClick={() => {
               setWarning(null);
@@ -336,7 +392,7 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
             }}
             style={{ padding: '8px 16px', fontSize: '13px', fontWeight: 600, border: 'none', borderRadius: 6, background: 'var(--warning)', color: '#fff', cursor: 'pointer' }}
           >
-            {warning.kind === 'row' ? 'Leave it out' : 'Save anyway'}
+            {warning.kind === 'row' ? 'Leave it out · ಬಿಡಿ' : 'Save anyway · ಸೇವ್ ಮಾಡಿ'}
           </button>
         </div>
       </div>
@@ -356,35 +412,51 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
       {saved && (
         <div style={{ ...banner, background: 'var(--success-light)', color: 'var(--success)', fontWeight: 600 }}>
           Saved to CRM. Reference {refNo}
+          <Kn>CRM ಗೆ ಸೇವ್ ಆಗಿದೆ. Reference {refNo}</Kn>
           {!stage3Reported && (
             <div style={{ fontWeight: 400, marginTop: 4, color: 'var(--text-secondary)' }}>
               The save is fine, but it wasn't credited on the Stage 3 leaderboard.
+              <Kn>ಸೇವ್ ಸರಿಯಾಗಿದೆ, ಆದರೆ Stage 3 ಲೀಡರ್‌ಬೋರ್ಡ್‌ನಲ್ಲಿ ಸೇರಿಲ್ಲ.</Kn>
             </div>
           )}
         </div>
       )}
 
-      {message && <div style={{ ...banner, background: 'var(--error-light)', color: 'var(--error)' }}>{message}</div>}
+      {message && (
+        <div style={{ ...banner, background: 'var(--error-light)', color: 'var(--error)' }}>
+          {message}
+          {messageKn(message) && <Kn>{messageKn(message)}</Kn>}
+        </div>
+      )}
 
       {report && !saved && (
         <p style={{ margin: 0, fontWeight: 600, color: 'var(--text-primary)' }}>
           Check result: {report.sent_rows} row{report.sent_rows === 1 ? '' : 's'}
           {report.net_amount != null && `, Rs ${report.net_amount.toLocaleString('en-IN')}`}
+          <Kn>
+            ಚೆಕ್ ಫಲಿತಾಂಶ: {report.sent_rows} ಸಾಲು(ಗಳು)
+            {report.net_amount != null && `, Rs ${report.net_amount.toLocaleString('en-IN')}`}
+          </Kn>
         </p>
       )}
 
       {stale && !saved && !unsure && (
         <div style={{ ...banner, background: 'var(--warning-light)', color: 'var(--warning)' }}>
           Something changed since this check. Check again before saving.
+          <Kn>ಈ ಚೆಕ್ ನಂತರ ಏನೋ ಬದಲಾಗಿದೆ. ಸೇವ್ ಮಾಡುವ ಮೊದಲು ಮತ್ತೆ ಚೆಕ್ ಮಾಡಿ.</Kn>
         </div>
       )}
 
       {report && !saved && report.errors.length > 0 && (
-        <Group title="Not allowed: fix the value in the table, or leave the row out" color="var(--error)">
+        <Group title="Not allowed: fix the value in the table, or leave the row out" titleKn="ಅನುಮತಿ ಇಲ್ಲ: ಟೇಬಲ್‌ನಲ್ಲಿ ಸರಿಪಡಿಸಿ, ಅಥವಾ ಸಾಲನ್ನು ಬಿಡಿ" color="var(--error)">
           {report.errors.map((issue, i) => (
-            <IssueRow key={i} name={rowName(issue.row)} text={issue.message}>
-              {issue.row !== null && (
-                <LeaveOutBox checked={leftOut.has(issue.row)} disabled={locked} onChange={() => toggleLeaveOut(issue.row as number, issue.message)} />
+            // Leaving a row out is done in the table's Leave out column, or with "Leave out these rows"
+            // in Notes. A left-out row stays in this list until the next check, so it's labelled here.
+            <IssueRow key={i} name={rowName(issue.row)} text={issue.message} kn={ISSUE_KN[issue.code]}>
+              {issue.row !== null && leftOut.has(issue.row) && (
+                <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--border)', borderRadius: 6, padding: '2px 8px' }}>
+                  Left out · ಬಿಡಲಾಗಿದೆ
+                </span>
               )}
             </IssueRow>
           ))}
@@ -392,12 +464,12 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
       )}
 
       {report && !saved && openQuestions.length > 0 && (
-        <Group title="Please confirm" color="var(--warning)">
+        <Group title="Please confirm" titleKn="ದಯವಿಟ್ಟು ಖಚಿತಪಡಿಸಿ" color="var(--warning)">
           {openQuestions.map((q, i) => (
-            <IssueRow key={i} name={rowName(q.row)} text={q.message}>
+            <IssueRow key={i} name={rowName(q.row)} text={q.message} kn={ISSUE_KN[q.code]}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 <input type="checkbox" checked={ticks.has(tickKey(q))} onChange={() => toggleTick(q)} disabled={locked} />
-                Yes
+                Yes · ಹೌದು
               </label>
             </IssueRow>
           ))}
@@ -405,51 +477,68 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
       )}
 
       {(notSent.length > 0 || leftOutShown.length > 0) && (
-        <Group title={saved ? 'Not on this DC: add these on the CRM screen' : 'Not sent'} color="var(--text-secondary)">
+        <Group
+          title={saved ? 'Not on this DC: add these on the CRM screen' : 'Not sent'}
+          titleKn={saved ? 'ಈ DC ಯಲ್ಲಿ ಇಲ್ಲ: ಇವುಗಳನ್ನು CRM ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಸೇರಿಸಿ' : 'ಕಳುಹಿಸಿಲ್ಲ'}
+          color="var(--text-secondary)"
+        >
           {notSent.map(r => (
-            <IssueRow key={`n${r.row}`} name={`Row ${r.row + 1}  ${r.product_name}`} text="No CRM product selected" />
+            <IssueRow key={`n${r.row}`} name={`Row ${r.row + 1}  ${r.product_name}`} text="No CRM product selected" kn="CRM ಉತ್ಪನ್ನ ಆಯ್ಕೆ ಮಾಡಿಲ್ಲ" />
           ))}
           {leftOutShown.map(([row, reason]) => (
-            <IssueRow key={`l${row}`} name={rowName(row)} text={reason}>
-              {!saved && <LeaveOutBox checked disabled={locked} onChange={() => toggleLeaveOut(row, reason)} />}
-            </IssueRow>
+            <IssueRow
+              key={`l${row}`}
+              name={rowName(row)}
+              text={reason}
+              kn={reason === LEFT_OUT_BY_HAND ? 'ಕೈಯಿಂದ ಬಿಡಲಾಗಿದೆ.' : ISSUE_KN[(report?.errors ?? []).find(e => e.row === row && e.message === reason)?.code ?? '']}
+            />
           ))}
         </Group>
       )}
 
       {report && !saved && (
         <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--text-primary)' }}>
-          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)' }}>Notes</span>
+          <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--accent)' }}>Notes · ಸೂಚನೆಗಳು</span>
           {tooOld && !unsure && (
             <strong style={{ color: 'var(--error)' }}>
               DC Date {dc.dc_date.split('-').reverse().join('/')} is more than {MAX_DC_AGE_DAYS} days old, so it can't be saved. Correct the DC Date at the top.
+              <Kn>DC ದಿನಾಂಕ {dc.dc_date.split('-').reverse().join('/')} {MAX_DC_AGE_DAYS} ದಿನಗಳಿಗಿಂತ ಹಳೆಯದು, ಆದ್ದರಿಂದ ಸೇವ್ ಆಗುವುದಿಲ್ಲ. ಮೇಲೆ DC ದಿನಾಂಕ ಸರಿಪಡಿಸಿ.</Kn>
             </strong>
           )}
           {unsure && retryRefused ? (
-            <span>Look for this DC on the CRM's DC Inward screen first. Only if it isn't there, click "It's not in the CRM, start again".</span>
+            <span>
+              Look for this DC on the CRM's DC Inward screen first. Only if it isn't there, click "It's not in the CRM, start again".
+              <Kn>ಮೊದಲು CRM ನ DC Inward ಸ್ಕ್ರೀನ್‌ನಲ್ಲಿ ಈ DC ಹುಡುಕಿ. ಅಲ್ಲಿ ಇಲ್ಲದಿದ್ದರೆ ಮಾತ್ರ "It's not in the CRM, start again" ಒತ್ತಿ.</Kn>
+            </span>
           ) : unsure ? (
-            <span>Click Save to CRM again.</span>
+            <span>Click Save to CRM again.<Kn>Save to CRM ಮತ್ತೆ ಒತ್ತಿ.</Kn></span>
           ) : stale ? (
-            <span>Click Check again.</span>
+            <span>Click Check again.<Kn>Check again ಒತ್ತಿ.</Kn></span>
           ) : openErrors.length === 0 && toTick.length === 0 ? (
             tooOld ? null : report.sent_rows > 0
-              ? <span style={{ color: 'var(--success)', fontWeight: 600 }}>Ready. Click Save to CRM.</span>
-              : <span>No rows left to send.</span>
+              ? <span style={{ color: 'var(--success)', fontWeight: 600 }}>Ready. Click Save to CRM.<Kn>ಸಿದ್ಧ. Save to CRM ಒತ್ತಿ.</Kn></span>
+              : <span>No rows left to send.<Kn>ಕಳುಹಿಸಲು ಯಾವ ಸಾಲೂ ಉಳಿದಿಲ್ಲ.</Kn></span>
           ) : (
             <>
               {badRows.length > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <strong>Leave out rows: {rowNumbers(badRows)}</strong>
-                  <button onClick={leaveOutAll} disabled={locked} style={smallBtn}>Leave out these rows</button>
+                  <strong>Leave out rows: {rowNumbers(badRows)}<Kn>ಈ ಸಾಲುಗಳನ್ನು ಬಿಡಿ: {rowNumbers(badRows)}</Kn></strong>
+                  <button onClick={leaveOutAll} disabled={locked} style={smallBtn}>Leave out these rows · ಈ ಸಾಲುಗಳನ್ನು ಬಿಡಿ</button>
                 </div>
               )}
               {toTick.length > 0 && (
-                <strong>{rowNumbers(toTick) ? `Tick Yes on rows: ${rowNumbers(toTick)}` : 'Tick Yes on the DC question'}</strong>
+                <strong>
+                  {rowNumbers(toTick) ? `Tick Yes on rows: ${rowNumbers(toTick)}` : 'Tick Yes on the DC question'}
+                  <Kn>{rowNumbers(toTick) ? `ಈ ಸಾಲುಗಳಲ್ಲಿ Yes ಟಿಕ್ ಮಾಡಿ: ${rowNumbers(toTick)}` : 'DC ಪ್ರಶ್ನೆಗೆ Yes ಟಿಕ್ ಮಾಡಿ'}</Kn>
+                </strong>
               )}
               {dcProblems.map(e => (
-                <strong key={e.code}>{e.code === 'DC_NUMBER_EXISTS'
-                  ? `${e.message} This delivery may already be in the CRM: look for it on the DC Inward screen first, and don't save it again if it's there. Change the DC Number at the top only if it was misread from the photo.`
-                  : e.message}</strong>
+                <strong key={e.code}>
+                  {e.code === 'DC_NUMBER_EXISTS'
+                    ? `${e.message} This delivery may already be in the CRM: look for it on the DC Inward screen first, and don't save it again if it's there. Change the DC Number at the top only if it was misread from the photo.`
+                    : e.message}
+                  {ISSUE_KN[e.code] && <Kn>{ISSUE_KN[e.code]}</Kn>}
+                </strong>
               ))}
             </>
           )}
@@ -465,7 +554,7 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
           )}
           {unsure && retryRefused && (
             <button onClick={startOver} disabled={working} style={{ ...smallBtn, padding: '8px 18px', fontSize: '13px' }}>
-              It's not in the CRM, start again
+              It's not in the CRM, start again · CRM ನಲ್ಲಿ ಇಲ್ಲ, ಮತ್ತೆ ಶುರು ಮಾಡಿ
             </button>
           )}
           <button
@@ -481,7 +570,7 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
             }}
           >
             {status === 'saving' && <MiniSpinner />}
-            {status === 'saving' ? 'Saving…' : 'Save to CRM'}
+            {status === 'saving' ? 'Saving… · ಸೇವ್ ಆಗುತ್ತಿದೆ…' : 'Save to CRM · CRM ಗೆ ಸೇವ್'}
           </button>
         </div>
       )}
@@ -492,31 +581,26 @@ export function useDcSubmit(rows: DcRowInput[], dc: DcDetails): {
   return { button, panel, leaveOutBox, isLeftOut };
 }
 
-function LeaveOutBox({ checked, disabled, onChange }: { checked: boolean; disabled: boolean; onChange: () => void }) {
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-      <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled} />
-      Leave out
-    </label>
-  );
-}
 
-function Group({ title, color, children }: { title: string; color: string; children: ReactNode }) {
+function Group({ title, titleKn, color, children }: { title: string; titleKn: string; color: string; children: ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <span style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color }}>
-        {title}
+        {title} · <span style={{ textTransform: 'none' }}>{titleKn}</span>
       </span>
       {children}
     </div>
   );
 }
 
-function IssueRow({ name, text, children }: { name: string; text: string; children?: ReactNode }) {
+function IssueRow({ name, text, kn, children }: { name: string; text: string; kn?: string; children?: ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 8px', background: 'var(--surface-2)', borderRadius: 6, flexWrap: 'wrap' }}>
       <span style={{ fontWeight: 600, color: 'var(--text-primary)', flexShrink: 0 }}>{name}</span>
-      <span style={{ flex: 1, minWidth: 180, color: 'var(--text-secondary)' }}>{text}</span>
+      <span style={{ flex: 1, minWidth: 180, color: 'var(--text-secondary)' }}>
+        {text}
+        {kn && <Kn>{kn}</Kn>}
+      </span>
       {children}
     </div>
   );

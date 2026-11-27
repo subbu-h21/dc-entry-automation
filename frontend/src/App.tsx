@@ -35,6 +35,9 @@ function formatInboxTime(iso: string): string {
 // how hard to think, so the Reasoning tick doesn't apply to it. The rest go through
 // OpenRouter: their ids were checked against its live /api/v1/models on 2026-11-07.
 const DEFAULT_EXTRACTION_MODEL = 'claude-sonnet-5-5';
+
+// Wide enough for the whole product table on a desktop screen, with thin margins at the sides.
+const PAGE_MAX_WIDTH = 1600;
 const EXTRACTION_MODELS = [
   { value: DEFAULT_EXTRACTION_MODEL,       label: 'Lite',   supportsReasoning: false },
   { value: 'google/gemini-3.1-flash-lite', label: 'Lite 2', supportsReasoning: false },
@@ -470,9 +473,9 @@ export default function App() {
       >
         <div
           style={{
-            maxWidth: 1100,
+            maxWidth: PAGE_MAX_WIDTH,
             margin: '0 auto',
-            padding: '0 24px',
+            padding: '0 16px',
             height: 64,
             display: 'flex',
             alignItems: 'center',
@@ -533,10 +536,10 @@ export default function App() {
       <main
         style={{
           flex: 1,
-          maxWidth: 1100,
+          maxWidth: PAGE_MAX_WIDTH,
           width: '100%',
           margin: '0 auto',
-          padding: '32px 24px',
+          padding: '24px 16px',
           display: 'flex',
           flexDirection: 'column',
           gap: 28,
@@ -997,7 +1000,7 @@ function SectionCard({
           </span>
         )}
       </div>
-      <div style={{ padding: '20px' }}>{children}</div>
+      <div style={{ padding: '16px 14px' }}>{children}</div>
     </div>
   );
 }
