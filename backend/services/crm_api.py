@@ -352,6 +352,66 @@ async def _find_product_id(name: str, pack: str, branch_id: int) -> int | None:
     return product_id
 
 
+async def _search_once(text: str, branch_id: int, supplier_id: int | None) -> list[dict]:
+    params: dict = {"search": text.replace("[", "_")}  # [ is a search pattern to the CRM, see above
+    if supplier_id is not None:
+        params["supplierId"] = supplier_id
+    resp = await _request("GET", "/products/search", branch_id, CRM_DEFAULT_EMPLOYEE_ID, params=params)
+    if resp.status_code != 200:
+        log.error("CRM product search failed: status=%s code=%s", resp.status_code, _log_code(resp))
+        raise CrmError("Couldn't search the CRM's products. Try again.")
+    try:
+        data = resp.json()
+        return [
+            {
+                "id": p["productId"],
+                "product": str(p["productName"]).strip(),
+                "pack": str(p.get("packLabel") or "").strip(),
+                "bought_before": p.get("boughtFromSupplier") is True,
+            }
+            for p in data if str(p.get("productName") or "").strip()
+        ]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        log.error("CRM product search answer was not in the expected shape")
+        raise CrmError("Couldn't search the CRM's products. Try again.")
+
+
+async def search_products(text: str, branch_id: int, supplier_id: int | None = None) -> tuple[list[dict], bool]:
+    """For the Change box: the CRM's own products, so whatever staff pick is one the
+    CRM has under exactly that name and pack, which is what _find_product_id looks up
+    on Check and Save.
+
+    The CRM matches the text as typed, anywhere in the name, alphabetically, at most
+    _SEARCH_LIMIT. So "pulmucus tab" finds nothing there: with several words the
+    longest one is searched too, keeping names that hold every word. Then the
+    supplier's own products, then names starting with the text, come first.
+    Returns the results and whether the CRM's limit may have left some out."""
+    words = text.upper().split()
+    queries = [text]
+    longest = max(words, key=len) if len(words) > 1 else ""
+    if longest and longest != text.upper():
+        queries.append(longest)
+    answers = await asyncio.gather(*(_search_once(q, branch_id, supplier_id) for q in queries))
+    # Only the search for the text itself counts: when that came back whole, every name
+    # holding the text is already here, whatever the longest-word search left out.
+    cut_short = len(answers[0]) >= _SEARCH_LIMIT
+
+    seen: set = set()
+    results: list[dict] = []
+    for n, answer in enumerate(answers):
+        for p in answer:
+            # The CRM's own match for the text is kept as it is; the longest-word
+            # search only adds names that hold every word.
+            if p["id"] in seen or (n > 0 and not all(w in _product_key(p["product"]) for w in words)):
+                continue
+            seen.add(p["id"])
+            results.append(p)
+
+    start = _product_key(text)
+    results.sort(key=lambda p: (not p["bought_before"], not _product_key(p["product"]).startswith(start)))
+    return [{k: p[k] for k in ("product", "pack", "bought_before")} for p in results], cut_short
+
+
 async def find_product_ids(products: list[tuple[str, str]], branch_id: int) -> list[int | None]:
     """products is (name, pack) per row. Each answer is a product id, None if
     the CRM has no such name, or AMBIGUOUS."""

@@ -236,6 +236,29 @@ async def check_dc(details: DcRequest):
     return _finish_report(report, prepared)
 
 
+@router.get("/products/search")
+async def search_products(q: str = "", branch: str = "", supplier: str = ""):
+    """The Change box's search, straight from the CRM's products. Reads only."""
+    text = q.strip()[:100]
+    if len(text) < 2:
+        return {"results": [], "cut_short": False}
+    branch_id = CRM_BRANCH_IDS.get(branch)
+    if branch_id is None:
+        raise HTTPException(status_code=400, detail=f'Unknown branch "{branch}".')
+    supplier_id = None
+    if supplier.strip():
+        try:
+            found = await crm_api.supplier_lookup(supplier)
+        except crm_api.CrmError:
+            found = None  # the search works without the supplier, just without its products first
+        supplier_id = found[0] if found else None
+    try:
+        results, cut_short = await crm_api.search_products(text, branch_id, supplier_id)
+    except crm_api.CrmError as e:
+        raise HTTPException(status_code=502, detail=e.message)
+    return {"results": results, "cut_short": cut_short}
+
+
 @router.post("/save")
 async def save_dc(details: DcSaveRequest):
     """Saves the DC to the CRM. Stock goes up immediately.

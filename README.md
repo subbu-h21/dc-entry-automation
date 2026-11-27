@@ -166,9 +166,9 @@ dc-entry-automation/
 │   ├── .env.example             # Copy this to .env and fill in keys
 │   ├── routes/
 │   │   ├── extract.py           # POST /extract — image(s) → product rows
-│   │   ├── crm.py               # POST /crm/dc/check, /crm/dc/save — send the DC to the CRM
+│   │   ├── crm.py               # POST /crm/dc/check, /crm/dc/save — send the DC to the CRM; GET /crm/dc/products/search for Change
 │   │   ├── voice.py             # POST /voice/command — voice corrections
-│   │   ├── products.py          # GET /suppliers, GET /staff, GET /products/search
+│   │   ├── products.py          # GET /suppliers, GET /staff, GET /products/search (Excel catalogue)
 │   │   ├── inbox.py             # GET/POST /inbox/* — phone uploads + dc_pipeline photo import
 │   │   └── admin.py             # PIN-gated: product-catalog upload
 │   └── services/

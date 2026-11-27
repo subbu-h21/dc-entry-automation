@@ -828,6 +828,8 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
                           <CandidatePicker
                             product={p}
                             current={pending[idx] ?? null}
+                            branch={dcDetails.branch}
+                            supplier={dcDetails.supplier}
                             onChange={val => setPending(prev => ({ ...prev, [idx]: val }))}
                             onApply={() => applyPicker(idx)}
                             onCancel={() => setExpandedRow(null)}
@@ -1002,6 +1004,8 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
                 <CandidatePicker
                   product={p}
                   current={pending[idx] ?? null}
+                  branch={dcDetails.branch}
+                  supplier={dcDetails.supplier}
                   onChange={val => setPending(prev => ({ ...prev, [idx]: val }))}
                   onApply={() => applyPicker(idx)}
                   onCancel={() => setExpandedRow(null)}
@@ -1028,17 +1032,24 @@ export default function ResultsTable({ products, dcDetails, onDCUpdate, review =
 
 /* ─── Candidate Picker ────────────────────────────────────── */
 
-interface SearchResult { product: string; pack: string; score: number; }
+/** One product from the CRM's own search, named and packed exactly as Check and Save look it up. */
+interface SearchResult { product: string; pack: string; bought_before: boolean; }
+
+const SEARCH_FAILED = "Couldn't search the CRM's products. Try again.";
 
 function CandidatePicker({
   product,
   current,
+  branch,
+  supplier,
   onChange,
   onApply,
   onCancel,
 }: {
   product: Product;
   current: Override | null;
+  branch: string;
+  supplier: string;   // the DC's supplier: that supplier's products are listed first
   onChange: (v: Override | null) => void;
   onApply: () => void;
   onCancel: () => void;
@@ -1046,23 +1057,48 @@ function CandidatePicker({
   const [searchQuery, setSearchQuery]   = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError]   = useState('');
+  const [cutShort, setCutShort]         = useState(false);
 
+  // Searches the CRM itself, not the Excel catalogue: a product picked here is one
+  // the CRM has. A newer keystroke cancels the older search, so a slow answer can't
+  // replace a newer one.
   useEffect(() => {
-    if (searchQuery.trim().length < 2) {
+    const text = searchQuery.trim();
+    setSearchError('');
+    if (text.length < 2) {
       setSearchResults([]);
+      setCutShort(false);
+      setSearchLoading(false);
       return;
     }
+    const ctrl = new AbortController();
+    setSearchLoading(true); // from the first keystroke, so "no match" never flashes up before the search
     const timer = setTimeout(async () => {
-      setSearchLoading(true);
       try {
-        const res = await fetch(`/products/search?q=${encodeURIComponent(searchQuery)}`);
-        if (res.ok) setSearchResults((await res.json()).results ?? []);
+        const params = new URLSearchParams({ q: text, branch, supplier });
+        const res = await fetch(`/crm/dc/products/search?${params}`, { signal: ctrl.signal });
+        const data = await res.json().catch(() => null);
+        if (ctrl.signal.aborted) return;
+        if (!res.ok || !data) {
+          setSearchResults([]);
+          setCutShort(false);
+          setSearchError(typeof data?.detail === 'string' ? data.detail : SEARCH_FAILED);
+          return;
+        }
+        setSearchResults(data.results ?? []);
+        setCutShort(data.cut_short === true);
+      } catch {
+        if (ctrl.signal.aborted) return;
+        setSearchResults([]);
+        setCutShort(false);
+        setSearchError("Couldn't reach the server. Try again.");
       } finally {
-        setSearchLoading(false);
+        if (!ctrl.signal.aborted) setSearchLoading(false);
       }
     }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+    return () => { clearTimeout(timer); ctrl.abort(); };
+  }, [searchQuery, branch, supplier]);
 
   const candidates: (Candidate & { extra?: boolean })[] = [...(product.top_candidates ?? [])];
   if (product.gemini_pick) candidates.push({ ...product.gemini_pick, extra: true });
@@ -1094,7 +1130,8 @@ function CandidatePicker({
           onChange={() => onChange({ product: productName, pack })}
           style={{ accentColor: '#0369a1', flexShrink: 0 }}
         />
-        <span style={{ fontWeight: 500, color: '#1e3a5f', flex: 1, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {/* Not flex: 1 — the picker can be as wide as the whole table, and the pack must stay in view */}
+        <span style={{ fontWeight: 500, color: '#1e3a5f', flex: '0 1 auto', minWidth: 0, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {productName}
         </span>
         <span style={{ fontSize: '11px', color: '#64748b', flexShrink: 0 }}>{pack}</span>
@@ -1113,7 +1150,7 @@ function CandidatePicker({
       <div style={{ position: 'relative', marginBottom: 12 }}>
         <input
           type="text"
-          placeholder="Search product database…"
+          placeholder="Search the CRM's products…"
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           style={{
@@ -1142,15 +1179,30 @@ function CandidatePicker({
 
       {/* Results: search hits OR preset candidates */}
       {isSearching ? (
-        searchResults.length > 0 ? searchResults.map((r, i) =>
-          renderOption(
-            `sr-${i}`, r.product, r.pack,
-            <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '1px 7px', borderRadius: 6, fontSize: '10px', fontWeight: 600, flexShrink: 0 }}>
-              {r.score}
-            </span>,
-          )
+        searchError ? (
+          <p style={{ fontSize: '12px', color: '#dc2626', padding: '4px 10px', marginBottom: 6 }}>{searchError}</p>
+        ) : searchResults.length > 0 ? (
+          <>
+            {searchResults.map((r, i) =>
+              renderOption(
+                `sr-${i}`, r.product, r.pack,
+                r.bought_before && supplier ? (
+                  <span style={{ background: '#dcfce7', color: '#166534', padding: '1px 7px', borderRadius: 6, fontSize: '10px', fontWeight: 600, flexShrink: 0 }}>
+                    Bought from this supplier
+                  </span>
+                ) : null,
+              )
+            )}
+            {cutShort && (
+              <p style={{ fontSize: '11px', color: '#64748b', padding: '2px 10px', marginBottom: 6 }}>
+                The CRM shows at most 20 matches. Type more of the name to narrow it down.
+              </p>
+            )}
+          </>
         ) : !searchLoading && (
-          <p style={{ fontSize: '12px', color: '#64748b', padding: '4px 10px', marginBottom: 6 }}>No results found.</p>
+          <p style={{ fontSize: '12px', color: '#64748b', padding: '4px 10px', marginBottom: 6 }}>
+            No product in the CRM matches "{searchQuery.trim()}".
+          </p>
         )
       ) : (
         candidates.map((cand, i) =>
